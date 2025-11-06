@@ -368,7 +368,7 @@ def patch_crewai_crew(crew, adapter: Optional[CrewAdapter] = None):
     
     Example:
         from crewai import Crew
-        from abide_agentkit.adapters import patch_crewai_crew
+        from abidex.adapters import patch_crewai_crew
         
         crew = Crew(agents=[...], tasks=[...])
         crew = patch_crewai_crew(crew)

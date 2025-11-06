@@ -128,6 +128,25 @@ class HTTPCollector:
     def _add_routes(self, app: FastAPI) -> None:
         """Add routes to the FastAPI app."""
         
+        @app.get("/")
+        async def root():
+            """Root endpoint with API information."""
+            return {
+                "name": "AbideX Telemetry Collector",
+                "version": "0.1.0",
+                "status": "running",
+                "endpoints": {
+                    "health": "GET /health",
+                    "stats": "GET /stats",
+                    "events": "POST /events",
+                    "batch_events": "POST /events/batch",
+                    "n8n_webhook": "POST /webhook/n8n",
+                    "generic_webhook": "POST /webhook/generic"
+                },
+                "docs": "/docs",
+                "openapi": "/openapi.json"
+            }
+        
         @app.get("/health", response_model=HealthResponse)
         async def health_check():
             """Health check endpoint."""
@@ -360,7 +379,7 @@ def create_collector_app(
         FastAPI application instance
     
     Example:
-        from abide_agentkit.collectors import create_collector_app
+        from abidex.collectors import create_collector_app
         import uvicorn
         
         app = create_collector_app(auth_token="your-secret-token")

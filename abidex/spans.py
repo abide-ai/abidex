@@ -1,5 +1,6 @@
 """
 Context managers for tracking agent runs, model calls, and tool executions.
+Uses OpenTelemetry spans as the backend.
 """
 
 import time
@@ -7,11 +8,14 @@ from contextlib import contextmanager
 from typing import Any, Dict, Optional, Generator, Union
 from uuid import uuid4
 
+from opentelemetry import trace
+from opentelemetry.trace import Span, Status, StatusCode
+
 from .client import TelemetryClient, Event, EventType, get_client
 
 
 class SpanContext:
-    """Base context for tracking spans."""
+    """Base context for tracking spans using OpenTelemetry."""
     
     def __init__(
         self,
@@ -34,97 +38,61 @@ class SpanContext:
         self.start_time = None
         self.end_time = None
         self.error = None
+        self.otel_span: Optional[Span] = None
     
     def start(self) -> None:
-        """Start the span."""
+        """Start the OpenTelemetry span."""
         self.start_time = time.time()
         
-        # Emit start event using new structured schema
-        start_event = self.client.new_event(
-            event_type=self._get_start_event_type(),
-            conversation_id=self.run_id,
-            tags=self.tags
-        )
+        # Create OpenTelemetry span
+        attributes = {
+            "span.type": self.span_type,
+            "span.name": self.name,
+            **self.tags,
+            **self.data
+        }
+        if self.run_id:
+            attributes["run_id"] = self.run_id
+        if self.parent_id:
+            attributes["parent_id"] = self.parent_id
         
-        start_event.run_id = self.run_id
-        start_event.parent_id = self.parent_id
-        start_event.span_id = self.span_id
-        
-        # Set action info for the span
-        start_event.set_action_info(
-            action_type=self.span_type,
-            name=self.name,
-            input_data=self.data
-        )
-        
-        # If this is a model call, also set model call info
+        # If this is a model call, add model info
         if self.span_type == "model_call" and hasattr(self, 'model') and hasattr(self, 'provider'):
-            start_event.set_model_call_info(
-                backend=self.provider,
-                model=self.model
-            )
+            attributes["model"] = self.model
+            attributes["backend"] = self.provider
         
-        self.client.emit(start_event)
+        self.otel_span = self.client.start_span(
+            name=self.name,
+            attributes=attributes
+        )
     
     def end(self, error: Optional[Exception] = None) -> None:
-        """End the span."""
+        """End the OpenTelemetry span."""
         self.end_time = time.time()
         self.error = error
         
-        # Calculate duration
-        duration = self.end_time - self.start_time if self.start_time else 0
-        
-        # Emit end event using new structured schema
-        end_event = self.client.new_event(
-            event_type=self._get_end_event_type(),
-            conversation_id=self.run_id,
-            tags=self.tags
-        )
-        
-        end_event.run_id = self.run_id
-        end_event.parent_id = self.parent_id
-        end_event.span_id = self.span_id
-        end_event.level = "error" if error else "info"
-        
-        # Set timing info
-        end_event.telemetry.timestamp_start = self.start_time
-        end_event.telemetry.timestamp_end = self.end_time
-        end_event.telemetry.latency_ms = duration * 1000.0
-        
-        # Set action info with result
-        end_event.set_action_info(
-            action_type=self.span_type,
-            name=self.name,
-            output_data=self.data if not error else None
-        )
-        
-        # Set success status
-        if end_event.action:
-            end_event.action.success = error is None
+        if self.otel_span:
+            # Calculate duration
+            duration = self.end_time - self.start_time if self.start_time else 0
+            self.otel_span.set_attribute("latency_ms", duration * 1000.0)
+            
+            # Update span with any additional data
+            for key, value in self.data.items():
+                if isinstance(value, (str, int, float, bool)):
+                    self.otel_span.set_attribute(f"data.{key}", value)
+            
             if error:
-                end_event.action.output = f"Error: {str(error)}"
-        
-        # If this is a model call, also set model call info in end event
-        if self.span_type == "model_call" and hasattr(self, 'model') and hasattr(self, 'provider'):
-            end_event.set_model_call_info(
-                backend=self.provider,
-                model=self.model
-            )
-        
-        if error:
-            end_event.success = False
-            end_event.error = str(error)
-        
-        self.client.emit(end_event)
-        
-        # Also emit error event if there was an error
-        if error:
-            self.client.error(
-                error=error,
-                context={"span_id": self.span_id, "span_type": self.span_type},
-                run_id=self.run_id,
-                span_id=self.span_id
-            )
+                self.otel_span.set_status(Status(StatusCode.ERROR, str(error)))
+                self.otel_span.record_exception(error)
+                # Also record error via client
+                self.client.error(
+                    error=error,
+                    context={"span_id": self.span_id, "span_type": self.span_type},
+                    run_id=self.run_id,
+                    span_id=self.span_id
+                )
+            
+            self.otel_span.end()
     
     def _get_start_event_type(self) -> EventType:
         """Get the start event type for this span."""
@@ -137,10 +105,16 @@ class SpanContext:
     def add_data(self, key: str, value: Any) -> None:
         """Add data to the span."""
         self.data[key] = value
+        # Also update OpenTelemetry span if it exists
+        if self.otel_span and isinstance(value, (str, int, float, bool)):
+            self.otel_span.set_attribute(f"data.{key}", value)
     
     def add_tag(self, key: str, value: str) -> None:
         """Add a tag to the span."""
         self.tags[key] = value
+        # Also update OpenTelemetry span if it exists
+        if self.otel_span:
+            self.otel_span.set_attribute(key, value)
 
 
 class AgentRunContext(SpanContext):
@@ -213,14 +187,15 @@ class ModelCallContext(SpanContext):
         if isinstance(messages, list) and messages:
             prompt_text = ""
             for msg in messages:
-                if isinstance(msg, dict) and "content" in msg:
+                if isinstance(msg, str):
+                    prompt_text += msg + "\n"
+                elif isinstance(msg, dict) and "content" in msg:
                     prompt_text += f"{msg.get('role', '')}: {msg['content']}\n"
             
-            # Update model call info with prompt
-            if hasattr(self, '_event_context'):
-                event = self._event_context
-                if event.model_call:
-                    event.model_call.prompt_preview = prompt_text[:500] + "..." if len(prompt_text) > 500 else prompt_text
+            # Update OpenTelemetry span with prompt preview
+            if self.otel_span:
+                preview = prompt_text[:500] + "..." if len(prompt_text) > 500 else prompt_text
+                self.otel_span.set_attribute("prompt_preview", preview)
         
         self.add_data("input", {
             "messages": messages,
@@ -232,16 +207,25 @@ class ModelCallContext(SpanContext):
         # Extract completion text from response
         completion_text = str(response)
         
-        # Update model call info with completion and tokens
-        if hasattr(self, '_event_context'):
-            event = self._event_context
-            if event.model_call:
-                event.model_call.completion_preview = completion_text[:500] + "..." if len(completion_text) > 500 else completion_text
+        # Update OpenTelemetry span with completion and tokens
+        if self.otel_span:
+            preview = completion_text[:500] + "..." if len(completion_text) > 500 else completion_text
+            self.otel_span.set_attribute("completion_preview", preview)
+            
+            # Set token counts from usage
+            if usage:
+                input_tokens = usage.get("input_tokens") or usage.get("prompt_tokens")
+                output_tokens = usage.get("output_tokens") or usage.get("completion_tokens")
+                if input_tokens:
+                    self.otel_span.set_attribute("input_token_count", input_tokens)
+                if output_tokens:
+                    self.otel_span.set_attribute("output_token_count", output_tokens)
                 
-                # Set token counts from usage
-                if usage:
-                    event.model_call.input_token_count = usage.get("input_tokens") or usage.get("prompt_tokens")
-                    event.model_call.output_token_count = usage.get("output_tokens") or usage.get("completion_tokens")
+                # Record tokens metric
+                if input_tokens:
+                    self.client.model_tokens_counter.add(input_tokens, attributes={"type": "input"})
+                if output_tokens:
+                    self.client.model_tokens_counter.add(output_tokens, attributes={"type": "output"})
         
         output_data = {"response": response}
         if usage:

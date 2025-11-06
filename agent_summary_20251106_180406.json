@@ -1,0 +1,24 @@
+{
+  "analysis_timestamp": "2025-11-06T18:04:06.920507",
+  "total_events": 20,
+  "event_types": {
+    "log": 8,
+    "metric": 4,
+    "agent_run_start": 2,
+    "model_call_start": 2,
+    "agent_run_end": 2,
+    "error": 2
+  },
+  "agents": {
+    "SimpleTestAgent": 20
+  },
+  "time_range": {
+    "start": "2025-11-06 17:25:01.899336",
+    "end": "2025-11-06 17:26:10.052813"
+  },
+  "performance_stats": {
+    "avg_latency_ms": 104.87449169158936,
+    "total_tokens": null,
+    "success_rate": 90.0
+  }
+}

@@ -39,7 +39,7 @@ def instrument_openai_client(
     
     Example:
         import openai
-        from abide_agentkit.instrumentation import instrument_openai_client
+        from abidex.instrumentation import instrument_openai_client
         
         client = openai.OpenAI(api_key="your-key")
         client = instrument_openai_client(client)
@@ -276,7 +276,7 @@ class LangChainCallbackHandler:
     
     Example:
         from langchain.llms import OpenAI
-        from abide_agentkit.instrumentation import LangChainCallbackHandler
+        from abidex.instrumentation import LangChainCallbackHandler
         
         handler = LangChainCallbackHandler()
         llm = OpenAI(callbacks=[handler])

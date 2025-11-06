@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "abide-agentkit"
+name = "abidex"
 version = "0.1.0"
 description = "Telemetry and logging SDK for AI agents"
 readme = "README.md"
@@ -32,16 +32,19 @@ requires-python = ">=3.8"
 # Core dependencies
 dependencies = [
     "requests>=2.25.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.20.0",
+    "pydantic>=2.0.0",
+    # OpenTelemetry for backend telemetry
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp>=1.20.0",
+    "opentelemetry-instrumentation>=0.42b0",
 ]
 
 # Optional dependencies
 [project.optional-dependencies]
-# FastAPI collector
-collector = [
-    "fastapi>=0.100.0",
-    "uvicorn[standard]>=0.20.0",
-    "pydantic>=2.0.0",
-]
+# Additional optional features can be added here
 
 # Prometheus metrics
 prometheus = [
@@ -72,7 +75,7 @@ dev = [
 
 # All optional dependencies
 all = [
-    "abide-agentkit[collector,prometheus,claude,crew]",
+    "abidex[collector,prometheus,claude,crew]",
 ]
 
 [project.urls]
@@ -82,13 +85,14 @@ Repository = "https://github.com/abide-ai/agentkit"
 Issues = "https://github.com/abide-ai/agentkit/issues"
 
 [project.scripts]
-abide-collector = "abide_agentkit.cli:collector_main"
+abidex = "abidex.cli:main"
+abidex-collector = "abidex.cli:collector_main"
 
 [tool.setuptools.packages.find]
-include = ["abide_agentkit*"]
+include = ["abidex*"]
 
 [tool.setuptools.package-data]
-abide_agentkit = ["py.typed"]
+abidex = ["py.typed"]
 
 # Black configuration
 [tool.black]
@@ -162,7 +166,7 @@ markers = [
 
 # Coverage configuration
 [tool.coverage.run]
-source = ["abide_agentkit"]
+source = ["abidex"]
 omit = [
     "*/tests/*",
     "*/test_*",

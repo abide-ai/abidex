@@ -10,15 +10,15 @@ import time
 import sys
 import os
 
-# Add parent directory to path for importing abide_agentkit
+# Add parent directory to path for importing abidex
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from abide_agentkit import TelemetryClient, AgentRun, ModelCall, ToolCall
-from abide_agentkit.sinks import JSONLSink
+from abidex import TelemetryClient, AgentRun, ModelCall, ToolCall
+from abidex.sinks import JSONLSink
 
 
 def main():
-    print("🔥 Structured Schema Demo - Abide AgentKit")
+    print(" Structured Schema Demo - Abide AgentKit")
     
     # Set up client with metadata
     client = TelemetryClient(
@@ -55,7 +55,7 @@ def main():
         result = [{"title": "Sparse Transformer Paper", "year": 2023}]
         tool.set_output(result)
     
-    print("✅ Tool call event created")
+    print(" Tool call event created")
     
     # Example 2: Model call event with full schema
     with ModelCall("claude-3-sonnet", "anthropic_claude", run_id="conv-1234") as model:
@@ -107,7 +107,7 @@ def main():
         
         client.emit(event)
     
-    print("✅ Model call event with full structured schema created")
+    print(" Model call event with full structured schema created")
     
     # Example 3: Agent run with nested events
     with AgentRun("research_task", client=client) as run:
@@ -147,7 +147,7 @@ def main():
         
         run.add_data("result", "analysis_complete")
     
-    print("✅ Agent run with nested structured events created")
+    print(" Agent run with nested structured events created")
     
     # Flush and close
     client.flush()
@@ -179,7 +179,7 @@ def main():
     except FileNotFoundError:
         print("No events file found")
     
-    print("\n🎉 Structured schema demonstration complete!")
+    print("\n Structured schema demonstration complete!")
     print("\nKey benefits of the structured schema:")
     print("- Clear separation of concerns (agent, action, model_call, telemetry)")
     print("- Consistent field names across all events")

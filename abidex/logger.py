@@ -86,11 +86,12 @@ class TelemetryLogHandler(logging.Handler):
             # Create and emit telemetry event
             event = Event(
                 event_type=EventType.LOG,
-                timestamp_start=record.created,
                 level=level,
-                data=data,
                 tags={"source": "python_logging", "logger": record.name}
             )
+            # Set timestamp and metadata
+            event.telemetry.timestamp_start = record.created
+            event.metadata = data
             
             self.client.emit(event)
             
@@ -143,22 +144,23 @@ class TelemetryLogger:
             level=level,
             run_id=self.run_id,
             span_id=self.span_id,
-            data={
-                "message": message,
-                "logger_name": self.name,
-                **(data or {})
-            },
             tags={
                 "source": "telemetry_logger",
                 "logger": self.name,
                 **(tags or {})
             }
         )
+        # Set metadata (Event uses metadata, not data)
+        event.metadata = {
+            "message": message,
+            "logger_name": self.name,
+            **(data or {})
+        }
         
         if error:
             event.success = False
             event.error = str(error)
-            event.data["exception"] = {
+            event.metadata["exception"] = {
                 "type": type(error).__name__,
                 "message": str(error)
             }
@@ -283,10 +285,31 @@ class AgentLogger(TelemetryLogger):
         self,
         agent_name: str,
         client: Optional[TelemetryClient] = None,
+        agent_role: Optional[str] = None,
         **kwargs
     ):
         super().__init__(f"agent.{agent_name}", client, **kwargs)
         self.agent_name = agent_name
+        self.agent_role = agent_role
+    
+    def _create_event(
+        self,
+        level: str,
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+        tags: Optional[Dict[str, str]] = None,
+        error: Optional[Exception] = None
+    ) -> Event:
+        """Create a telemetry event for logging with agent information."""
+        event = super()._create_event(level, message, data, tags, error)
+        
+        # Set agent information in the event's agent field
+        event.set_agent_info(
+            name=self.agent_name,
+            role=self.agent_role
+        )
+        
+        return event
     
     def thinking(
         self,
@@ -377,6 +400,7 @@ def get_logger(
 def get_agent_logger(
     agent_name: str,
     client: Optional[TelemetryClient] = None,
+    role: Optional[str] = None,
     **kwargs
 ) -> AgentLogger:
     """
@@ -385,12 +409,13 @@ def get_agent_logger(
     Args:
         agent_name: Name of the agent
         client: Telemetry client (uses default if None)
+        role: Agent role (e.g., "decision-maker", "data-processor", "notification")
         **kwargs: Additional arguments for AgentLogger
     
     Returns:
         AgentLogger instance
     """
-    return AgentLogger(agent_name, client, **kwargs)
+    return AgentLogger(agent_name, client, agent_role=role, **kwargs)
 
 
 def setup_telemetry_logging(

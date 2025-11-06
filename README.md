@@ -1,54 +1,106 @@
-# Abide AgentKit
+# AbideX
 
-A comprehensive telemetry and logging SDK for AI agents, providing observability and monitoring capabilities for agent workflows, model calls, and tool executions.
+An OpenTelemetry-based telemetry and logging SDK for AI agents, providing industry-standard observability and monitoring capabilities for agent workflows, model calls, and tool executions.
 
 ## Features
 
+- **OpenTelemetry Native**: Built entirely on OpenTelemetry - all functions use OpenTelemetry APIs
 - **Comprehensive Telemetry**: Track agent runs, model calls, and tool executions with detailed context
 - **Enhanced Event Schema**: Built-in latency tracking, token counting, and performance metrics
-- **Multiple Sinks**: Export data to JSONL files, HTTP endpoints, or Prometheus metrics
+- **Multiple Sinks**: Export data to JSONL files, HTTP endpoints, OTLP (OpenTelemetry Protocol), or Prometheus metrics
 - **Framework Adapters**: Built-in support for popular AI frameworks (Claude, CrewAI, n8n)
 - **Automatic Instrumentation**: Decorator and monkey-patching support for popular AI libraries
 - **Telemetry Logging**: Integrated logging that combines Python logging with telemetry
 - **Sampling Support**: Configurable sampling rates for high-volume scenarios
 - **Data Privacy**: Automatic redaction of sensitive information
 - **Easy Integration**: Simple context managers and decorators for minimal code changes
-- **HTTP Collector**: Optional FastAPI-based collector for centralized telemetry gathering
+- **HTTP Collector**: FastAPI-based collector for centralized telemetry gathering
 
 ## Installation
 
 ### Basic Installation
 
 ```bash
-pip install abide-agentkit
+# Using pip
+pip install abidex
+
+# Using uv (faster)
+uv pip install abidex
 ```
 
 ### With Optional Dependencies
 
 ```bash
-# For HTTP collector
-pip install abide-agentkit[collector]
-
 # For Prometheus metrics
-pip install abide-agentkit[prometheus]
+pip install abidex[prometheus]
+# or with uv
+uv pip install "abidex[prometheus]"
 
 # For Claude integration
-pip install abide-agentkit[claude]
+pip install abidex[claude]
+# or with uv
+uv pip install "abidex[claude]"
 
 # For CrewAI integration  
-pip install abide-agentkit[crew]
+pip install abidex[crew]
+# or with uv
+uv pip install "abidex[crew]"
 
-# All features
-pip install abide-agentkit[all]
+# All optional features
+pip install abidex[all]
+# or with uv
+uv pip install "abidex[all]"
 ```
+
+**Note**: The HTTP collector dependencies (FastAPI, uvicorn) are now included by default, so the collector command works out of the box.
 
 ## Quick Start
 
-### Basic Usage
+### Using OpenTelemetry Directly
 
 ```python
-from abide_agentkit import TelemetryClient, AgentRun, get_logger
-from abide_agentkit.sinks import JSONLSink
+from abidex import (
+    trace, metrics, Span, Status, StatusCode,
+    TracerProvider, MeterProvider,
+    OTLPSpanExporter, OTLPMetricExporter
+)
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+# Set up OpenTelemetry
+tracer_provider = TracerProvider()
+tracer_provider.add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces"))
+)
+trace.set_tracer_provider(tracer_provider)
+
+meter_provider = MeterProvider(
+    metric_readers=[
+        PeriodicExportingMetricReader(
+            OTLPMetricExporter(endpoint="http://localhost:4318/v1/metrics")
+        )
+    ]
+)
+metrics.set_meter_provider(meter_provider)
+
+# Use OpenTelemetry directly
+tracer = trace.get_tracer("my_agent")
+with tracer.start_as_current_span("agent_task") as span:
+    span.set_attribute("agent.name", "MyAgent")
+    span.set_attribute("task.type", "processing")
+    # ... your agent logic ...
+
+# Record metrics
+meter = metrics.get_meter("my_agent")
+counter = meter.create_counter("tasks.completed")
+counter.add(1, attributes={"agent": "MyAgent"})
+```
+
+### Using AbideX Client (OpenTelemetry Backend)
+
+```python
+from abidex import TelemetryClient, AgentRun, get_logger
+from abidex.sinks import JSONLSink
 
 # Set up enhanced telemetry client with sampling
 client = TelemetryClient(
@@ -91,7 +143,7 @@ def generate_text(prompt):
     )
 
 # Automatic framework instrumentation
-from abide_agentkit import instrumentation
+from abidex import instrumentation
 
 # Auto-instrument OpenAI client
 openai_client = instrumentation.instrument_openai_client(openai_client)
@@ -109,7 +161,7 @@ agent_logger.decision("use_gpt4", reasoning="Complex query needs advanced model"
 #### Claude Integration
 
 ```python
-from abide_agentkit.adapters import ClaudeAdapter
+from abidex.adapters import ClaudeAdapter
 import anthropic
 
 # Set up adapter
@@ -126,7 +178,7 @@ with adapter.track_completion("claude-3-opus-20240229", messages) as call:
     call.set_response(response)
 
 # Or use automatic patching
-from abide_agentkit.adapters import patch_anthropic_client
+from abidex.adapters import patch_anthropic_client
 client = patch_anthropic_client(client)
 # Now all calls are automatically tracked
 ```
@@ -134,7 +186,7 @@ client = patch_anthropic_client(client)
 #### CrewAI Integration
 
 ```python
-from abide_agentkit.adapters import CrewAdapter
+from abidex.adapters import CrewAdapter
 
 adapter = CrewAdapter()
 
@@ -152,7 +204,7 @@ with adapter.track_agent_task("researcher", "Research AI trends") as task:
 #### n8n Integration
 
 ```python
-from abide_agentkit.adapters import N8NAdapter
+from abidex.adapters import N8NAdapter
 
 adapter = N8NAdapter()
 
@@ -174,7 +226,7 @@ with adapter.track_node_execution("http_request", "HTTP Request") as node:
 #### JSONL File Sink
 
 ```python
-from abide_agentkit.sinks import JSONLSink
+from abidex.sinks import JSONLSink
 
 # Basic file sink
 sink = JSONLSink("telemetry.jsonl")
@@ -190,7 +242,7 @@ sink = JSONLSink(
 #### HTTP Sink
 
 ```python
-from abide_agentkit.sinks import HTTPSink
+from abidex.sinks import HTTPSink
 
 # Send to HTTP endpoint
 sink = HTTPSink(
@@ -200,7 +252,7 @@ sink = HTTPSink(
 )
 
 # Webhook sink
-from abide_agentkit.sinks import WebhookSink
+from abidex.sinks import WebhookSink
 sink = WebhookSink(
     "https://your-webhook.com",
     secret="webhook-secret"
@@ -210,13 +262,13 @@ sink = WebhookSink(
 #### Prometheus Metrics
 
 ```python
-from abide_agentkit.sinks import PrometheusSink
+from abidex.sinks import PrometheusSink
 
 # Export metrics
 sink = PrometheusSink(metric_prefix="my_agent")
 
 # With HTTP server
-from abide_agentkit.sinks import PrometheusHTTPSink
+from abidex.sinks import PrometheusHTTPSink
 sink = PrometheusHTTPSink(port=8000)
 ```
 
@@ -225,7 +277,7 @@ sink = PrometheusHTTPSink(port=8000)
 Run a centralized collector to receive telemetry from multiple agents:
 
 ```python
-from abide_agentkit.collectors import create_collector_app
+from abidex.collectors import create_collector_app
 import uvicorn
 
 # Create collector app
@@ -247,7 +299,7 @@ abide-collector --port 8000 --auth-token your-secret-token
 ### Data Privacy and Redaction
 
 ```python
-from abide_agentkit.utils.redaction import RedactionManager, add_redaction_rule
+from abidex.utils.redaction import RedactionManager, add_redaction_rule
 import re
 
 # Add custom redaction rules
@@ -272,8 +324,8 @@ sink = JSONLSink("telemetry.jsonl", redact_sensitive=True)
 ### Global Client Setup
 
 ```python
-from abide_agentkit import set_client, TelemetryClient
-from abide_agentkit.sinks import HTTPSink
+from abidex import set_client, TelemetryClient
+from abidex.sinks import HTTPSink
 
 # Configure global client
 client = TelemetryClient(

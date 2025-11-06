@@ -288,7 +288,7 @@ def patch_anthropic_client(anthropic_client, adapter: Optional[ClaudeAdapter] = 
     
     Example:
         import anthropic
-        from abide_agentkit.adapters import patch_anthropic_client
+        from abidex.adapters import patch_anthropic_client
         
         client = anthropic.Anthropic(api_key="your-key")
         client = patch_anthropic_client(client)

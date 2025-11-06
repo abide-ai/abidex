@@ -10,15 +10,15 @@ This example demonstrates:
 """
 
 import time
-from abide_agentkit import (
+from abidex import (
     TelemetryClient, AgentRun, get_logger, get_agent_logger,
     setup_telemetry_logging, instrumentation
 )
-from abide_agentkit.sinks import JSONLSink, PrometheusSink
+from abidex.sinks import JSONLSink, PrometheusSink
 
 
 def main():
-    print("🚀 Enhanced Abide AgentKit Usage Examples")
+    print(" Enhanced Abide AgentKit Usage Examples")
     
     # 1. Set up enhanced telemetry client with sampling
     print("\n1. Setting up enhanced telemetry client...")
@@ -35,9 +35,9 @@ def main():
     # Add Prometheus sink if available
     try:
         client.add_sink(PrometheusSink(metric_prefix="demo_agent"))
-        print("✅ Prometheus metrics enabled")
+        print(" Prometheus metrics enabled")
     except ImportError:
-        print("⚠️ Prometheus not available, skipping metrics")
+        print(" Prometheus not available, skipping metrics")
     
     # 2. Demonstrate new Event schema with performance tracking
     print("\n2. Creating events with enhanced schema...")
@@ -54,7 +54,7 @@ def main():
         event.prompt_char_length = 600
         event.response_char_length = 300
     
-    print("✅ Model call tracked with performance metrics")
+    print(" Model call tracked with performance metrics")
     
     # 3. Demonstrate decorator-based instrumentation
     print("\n3. Using decorator-based instrumentation...")
@@ -66,7 +66,7 @@ def main():
         return f"Response to: {prompt[:50]}..."
     
     result = simulate_ai_task("What is the meaning of life?", max_tokens=150)
-    print(f"✅ Decorated function result: {result}")
+    print(f" Decorated function result: {result}")
     
     # 4. Telemetry logging integration
     print("\n4. Demonstrating telemetry logging...")
@@ -82,7 +82,7 @@ def main():
     agent_logger.action("processing_request", details={"complexity": "medium"})
     agent_logger.decision("use_gpt4", reasoning="Complex query requires advanced model")
     
-    print("✅ Telemetry logging demonstrated")
+    print(" Telemetry logging demonstrated")
     
     # 5. Agent run with enhanced tracking
     print("\n5. Enhanced agent run tracking...")
@@ -104,7 +104,7 @@ def main():
         
         run.add_data("result", "success")
     
-    print("✅ Enhanced agent run completed")
+    print(" Enhanced agent run completed")
     
     # 6. Automatic instrumentation examples
     print("\n6. Automatic instrumentation examples...")
@@ -147,7 +147,7 @@ def main():
         messages=[{"role": "user", "content": "Hello, world!"}]
     )
     
-    print(f"✅ Instrumented OpenAI call: {response.choices[0].message.content}")
+    print(f" Instrumented OpenAI call: {response.choices[0].message.content}")
     
     # 7. Custom function instrumentation
     print("\n7. Custom function instrumentation...")
@@ -168,7 +168,7 @@ def main():
         return f"Intelligent response to: {prompt}"
     
     ai_result = custom_ai_function("What's the weather like?")
-    print(f"✅ Custom instrumented function: {ai_result}")
+    print(f" Custom instrumented function: {ai_result}")
     
     # 8. Batch event creation
     print("\n8. Batch event creation...")
@@ -190,7 +190,7 @@ def main():
     for event in events:
         client.emit(event)
     
-    print(f"✅ Created and emitted {len(events)} batch events")
+    print(f" Created and emitted {len(events)} batch events")
     
     # 9. Integration with standard Python logging
     print("\n9. Standard Python logging integration...")
@@ -205,7 +205,7 @@ def main():
     py_logger.info("This standard log message also goes to telemetry!")
     py_logger.error("This error is tracked in telemetry too!")
     
-    print("✅ Standard Python logging integrated")
+    print(" Standard Python logging integrated")
     
     # 10. Performance and sampling demonstration
     print("\n10. Performance and sampling demonstration...")
@@ -225,7 +225,7 @@ def main():
             event.output_token_count = i // 2
     
     duration = time.time() - start_time
-    print(f"✅ Generated 100 events in {duration:.3f}s (with 10% sampling)")
+    print(f" Generated 100 events in {duration:.3f}s (with 10% sampling)")
     
     # Cleanup
     client.flush()
@@ -233,7 +233,7 @@ def main():
     high_volume_client.flush()
     high_volume_client.close()
     
-    print("\n🎉 Enhanced features demonstration complete!")
+    print("\n Enhanced features demonstration complete!")
     print("Check 'enhanced_telemetry.jsonl' for detailed event logs")
 
 

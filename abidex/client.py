@@ -1,5 +1,8 @@
 """
-Core telemetry client and event schema for the Abide AgentKit SDK.
+Core telemetry client using OpenTelemetry as the backend.
+
+This module provides the TelemetryClient and related classes using OpenTelemetry
+for distributed tracing, metrics, and logging.
 """
 
 import json
@@ -9,6 +12,19 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol, Union
 from dataclasses import dataclass, asdict, field
 from uuid import uuid4
+from contextlib import contextmanager
+
+# OpenTelemetry imports
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from opentelemetry.metrics import Meter, Counter, Histogram
 
 
 class EventType(str, Enum):
@@ -268,7 +284,10 @@ class TelemetrySink(Protocol):
 
 class TelemetryClient:
     """
-    Core telemetry client for collecting and sending events.
+    OpenTelemetry-based telemetry client.
+    
+    This client uses OpenTelemetry for distributed tracing, metrics, and logging.
+    It maintains compatibility with the existing API while using OpenTelemetry as the backend.
     """
     
     def __init__(
@@ -277,17 +296,117 @@ class TelemetryClient:
         sinks: Optional[List[TelemetrySink]] = None,
         default_tags: Optional[Dict[str, str]] = None,
         sample_rate: float = 1.0,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        otlp_endpoint: Optional[str] = None,
+        otlp_headers: Optional[Dict[str, str]] = None,
+        service_name: Optional[str] = None,
+        service_version: Optional[str] = None
     ):
         self.agent_id = agent_id or str(uuid4())
-        self.sinks = sinks or []
+        self.sinks = sinks or []  # Keep for backward compatibility
         self.default_tags = default_tags or {}
         self.sample_rate = float(sample_rate)
         self.metadata = metadata or {}
         self._enabled = True
+        
+        # Set up OpenTelemetry resource
+        service_name = service_name or agent_id or "abidex_service"
+        service_version = service_version or "0.1.0"
+        
+        resource_attributes = {
+            "service.name": service_name,
+            "service.version": service_version,
+            "agent.id": self.agent_id,
+            **self.metadata
+        }
+        resource = Resource.create(resource_attributes)
+        
+        # Initialize TracerProvider
+        self.tracer_provider = TracerProvider(resource=resource)
+        
+        # Set up span exporters
+        if otlp_endpoint:
+            span_exporter = OTLPSpanExporter(
+                endpoint=otlp_endpoint + "/v1/traces",
+                headers=otlp_headers or {}
+            )
+        else:
+            span_exporter = ConsoleSpanExporter()
+        
+        self.tracer_provider.add_span_processor(
+            BatchSpanProcessor(span_exporter)
+        )
+        
+        # Set as global tracer provider
+        trace.set_tracer_provider(self.tracer_provider)
+        
+        # Get tracer
+        self.tracer: Tracer = trace.get_tracer(
+            instrumenting_module_name="abidex",
+            instrumenting_library_version=service_version
+        )
+        
+        # Set up metric exporters
+        metric_readers = []
+        if otlp_endpoint:
+            metric_exporter = OTLPMetricExporter(
+                endpoint=otlp_endpoint + "/v1/metrics",
+                headers=otlp_headers or {}
+            )
+            metric_readers.append(
+                PeriodicExportingMetricReader(metric_exporter)
+            )
+        else:
+            metric_exporter = ConsoleMetricExporter()
+            metric_readers.append(
+                PeriodicExportingMetricReader(metric_exporter)
+            )
+        
+        # Initialize MeterProvider with metric readers
+        self.meter_provider = MeterProvider(
+            resource=resource,
+            metric_readers=metric_readers
+        )
+        
+        # Set as global meter provider
+        metrics.set_meter_provider(self.meter_provider)
+        
+        # Get meter
+        self.meter: Meter = metrics.get_meter(
+            name="abidex",
+            version=service_version
+        )
+        
+        # Create common metrics
+        self._create_otel_metrics()
+    
+    def _create_otel_metrics(self):
+        """Create OpenTelemetry metrics."""
+        self.agent_runs_counter: Counter = self.meter.create_counter(
+            name="abidex.agent.runs",
+            description="Total number of agent runs"
+        )
+        self.model_calls_counter: Counter = self.meter.create_counter(
+            name="abidex.model.calls",
+            description="Total number of model calls"
+        )
+        self.model_tokens_counter: Counter = self.meter.create_counter(
+            name="abidex.model.tokens",
+            description="Total tokens used in model calls",
+            unit="token"
+        )
+        self.model_latency_histogram: Histogram = self.meter.create_histogram(
+            name="abidex.model.latency",
+            description="Model call latency",
+            unit="ms"
+        )
+        self.errors_counter: Counter = self.meter.create_counter(
+            name="abidex.errors",
+            description="Total number of errors"
+        )
     
     def add_sink(self, sink: TelemetrySink) -> None:
-        """Add a telemetry sink."""
+        """Add a telemetry sink (kept for backward compatibility)."""
         self.sinks.append(sink)
     
     def remove_sink(self, sink: TelemetrySink) -> None:
@@ -307,6 +426,48 @@ class TelemetryClient:
         """Determine if event should be sampled."""
         import random
         return random.random() < self.sample_rate
+    
+    def start_span(
+        self,
+        name: str,
+        kind: trace.SpanKind = trace.SpanKind.INTERNAL,
+        attributes: Optional[Dict[str, Any]] = None,
+        links: Optional[list] = None,
+        start_time: Optional[int] = None
+    ) -> Span:
+        """Start a new OpenTelemetry span."""
+        if not self._enabled:
+            return trace.NoOpSpan()
+        
+        span_attributes = {**self.default_tags, **(attributes or {})}
+        return self.tracer.start_span(
+            name=name,
+            kind=kind,
+            attributes=span_attributes,
+            links=links,
+            start_time=start_time
+        )
+    
+    @contextmanager
+    def span(
+        self,
+        name: str,
+        kind: trace.SpanKind = trace.SpanKind.INTERNAL,
+        attributes: Optional[Dict[str, Any]] = None,
+        set_status_on_exception: bool = True
+    ):
+        """Context manager for creating an OpenTelemetry span."""
+        span = self.start_span(name, kind, attributes)
+        try:
+            with trace.use_span(span):
+                yield span
+        except Exception as e:
+            if set_status_on_exception:
+                span.set_status(Status(StatusCode.ERROR, str(e)))
+                span.record_exception(e)
+            raise
+        finally:
+            span.end()
     
     def new_event(
         self,
@@ -339,23 +500,63 @@ class TelemetryClient:
         return event
     
     def emit(self, event: Event) -> None:
-        """Emit an event to all configured sinks."""
+        """Emit an event using OpenTelemetry spans and metrics."""
         if not self._enabled or not event.sampled:
             return
         
         # Set agent info if not already set
-        if not event.agent.name and self.agent_id:
+        if (not event.agent.name or event.agent.name == "") and self.agent_id:
             event.set_agent_info(name=self.agent_id)
         
         # Merge default tags
         event.tags = {**self.default_tags, **event.tags}
         
-        # Send to all sinks
+        # Convert Event to OpenTelemetry span
+        attributes = {
+            "event.type": event.event_type.value,
+            "agent.name": event.agent.name or "",
+            "agent.role": event.agent.role or "",
+            **event.tags,
+            **event.metadata
+        }
+        
+        if event.agent.name:
+            attributes["agent.name"] = event.agent.name
+        if event.agent.role:
+            attributes["agent.role"] = event.agent.role
+        
+        # Create span based on event type
+        span_name = event.event_type.value
+        with self.span(name=span_name, attributes=attributes) as span:
+            if event.error:
+                span.set_status(Status(StatusCode.ERROR, event.error))
+                span.record_exception(Exception(event.error))
+                self.errors_counter.add(1, attributes=attributes)
+            
+            if event.telemetry.latency_ms:
+                span.set_attribute("latency_ms", event.telemetry.latency_ms)
+            
+            # Record metrics based on event type
+            if event.event_type == EventType.AGENT_RUN_START:
+                self.agent_runs_counter.add(1, attributes=attributes)
+            elif event.event_type == EventType.MODEL_CALL_START:
+                self.model_calls_counter.add(1, attributes=attributes)
+                if event.telemetry.latency_ms:
+                    self.model_latency_histogram.record(
+                        event.telemetry.latency_ms,
+                        attributes=attributes
+                    )
+                if event.model_call and event.model_call.input_token_count:
+                    self.model_tokens_counter.add(
+                        event.model_call.input_token_count,
+                        attributes=attributes
+                    )
+        
+        # Also send to legacy sinks for backward compatibility
         for sink in self.sinks:
             try:
                 sink.send(event)
             except Exception as e:
-                # Log sink errors but don't fail the operation
                 print(f"Warning: Failed to send event to sink {sink}: {e}")
     
     def write(self, event: Event) -> None:
@@ -371,16 +572,41 @@ class TelemetryClient:
         run_id: Optional[str] = None,
         span_id: Optional[str] = None
     ) -> None:
-        """Log a message event."""
+        """Log a message using OpenTelemetry span events."""
+        if not self._enabled:
+            return
+        
+        attributes = {
+            "message": message,
+            "level": level,
+            **self.default_tags,
+            **(tags or {}),
+            **(data or {})
+        }
+        if run_id:
+            attributes["run_id"] = run_id
+        if span_id:
+            attributes["span_id"] = span_id
+        
+        # Log as OpenTelemetry span event
+        with self.span("log", attributes=attributes) as span:
+            span.add_event(name=f"log.{level}", attributes=attributes)
+        
+        # Also emit as Event for backward compatibility
         event = Event(
             event_type=EventType.LOG,
             level=level,
-            data={"message": message, **(data or {})},
             tags=tags or {},
             run_id=run_id,
             span_id=span_id
         )
-        self.emit(event)
+        event.metadata.update({"message": message, **(data or {})})
+        # Send to legacy sinks
+        for sink in self.sinks:
+            try:
+                sink.send(event)
+            except Exception:
+                pass
     
     def metric(
         self,
@@ -391,19 +617,42 @@ class TelemetryClient:
         run_id: Optional[str] = None,
         span_id: Optional[str] = None
     ) -> None:
-        """Record a metric event."""
+        """Record a metric using OpenTelemetry metrics API."""
+        if not self._enabled:
+            return
+        
+        attributes = {**self.default_tags, **(tags or {})}
+        if run_id:
+            attributes["run_id"] = run_id
+        if span_id:
+            attributes["span_id"] = span_id
+        
+        # Use OpenTelemetry histogram for numeric metrics
+        histogram = self.meter.create_histogram(
+            name=name,
+            description=f"Metric: {name}",
+            unit=unit or ""
+        )
+        histogram.record(value, attributes=attributes)
+        
+        # Also emit as Event for backward compatibility
         event = Event(
             event_type=EventType.METRIC,
-            data={
-                "metric_name": name,
-                "value": value,
-                "unit": unit
-            },
             tags=tags or {},
             run_id=run_id,
             span_id=span_id
         )
-        self.emit(event)
+        event.metadata.update({
+            "metric_name": name,
+            "value": value,
+            "unit": unit
+        })
+        # Send to legacy sinks
+        for sink in self.sinks:
+            try:
+                sink.send(event)
+            except Exception:
+                pass
     
     def error(
         self,
@@ -413,20 +662,49 @@ class TelemetryClient:
         run_id: Optional[str] = None,
         span_id: Optional[str] = None
     ) -> None:
-        """Record an error event."""
+        """Record an error using OpenTelemetry."""
+        if not self._enabled:
+            return
+        
+        attributes = {
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            **self.default_tags,
+            **(tags or {}),
+            **(context or {})
+        }
+        if run_id:
+            attributes["run_id"] = run_id
+        if span_id:
+            attributes["span_id"] = span_id
+        
+        # Record error as OpenTelemetry span
+        with self.span("error", attributes=attributes) as span:
+            span.set_status(Status(StatusCode.ERROR, str(error)))
+            span.record_exception(error)
+            self.errors_counter.add(1, attributes=attributes)
+        
+        # Also emit as Event for backward compatibility
         event = Event(
             event_type=EventType.ERROR,
             level="error",
-            data={
-                "error_type": type(error).__name__,
-                "error_message": str(error),
-                "context": context or {}
-            },
             tags=tags or {},
             run_id=run_id,
             span_id=span_id
         )
-        self.emit(event)
+        event.error = str(error)
+        event.success = False
+        event.metadata.update({
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "context": context or {}
+        })
+        # Send to legacy sinks
+        for sink in self.sinks:
+            try:
+                sink.send(event)
+            except Exception:
+                pass
     
     def flush(self) -> None:
         """Flush all sinks."""
@@ -437,14 +715,21 @@ class TelemetryClient:
                 print(f"Warning: Failed to flush sink {sink}: {e}")
     
     def close(self) -> None:
-        """Close all sinks and cleanup."""
+        """Close all sinks and shutdown OpenTelemetry providers."""
         for sink in self.sinks:
             try:
                 sink.close()
             except Exception as e:
                 print(f"Warning: Failed to close sink {sink}: {e}")
         self.sinks.clear()
+        
+        # Shutdown OpenTelemetry providers
+        if self.tracer_provider:
+            self.tracer_provider.shutdown()
+        if self.meter_provider:
+            self.meter_provider.shutdown()
     
+    @contextmanager
     def infer(
         self,
         model: Optional[str] = None,
@@ -453,14 +738,34 @@ class TelemetryClient:
         tags: Optional[Dict[str, str]] = None
     ):
         """
-        Context manager for tracking inference/model calls.
+        Context manager for tracking inference/model calls using OpenTelemetry.
         
         Example:
-            with client.infer("gpt-4", "openai") as event:
+            with client.infer("gpt-4", "openai") as span:
                 response = model.generate(prompt)
-                event.output_token_count = len(response)
+                span.set_attribute("output_tokens", len(response))
         """
-        return InferenceContext(self, model, backend, batch_size, tags)
+        if not self._enabled:
+            yield trace.NoOpSpan()
+            return
+        
+        attributes = {
+            "model": model or "unknown",
+            "backend": backend or "unknown",
+            "batch_size": batch_size,
+            **self.default_tags,
+            **(tags or {})
+        }
+        
+        start_time = time.time()
+        with self.span("model.call", attributes=attributes) as span:
+            try:
+                yield span
+            finally:
+                latency_ms = (time.time() - start_time) * 1000
+                span.set_attribute("latency_ms", latency_ms)
+                self.model_latency_histogram.record(latency_ms, attributes=attributes)
+                self.model_calls_counter.add(1, attributes=attributes)
     
     def record(
         self,
