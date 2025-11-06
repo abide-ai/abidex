@@ -1,20 +1,67 @@
 # AbideX
 
-An OpenTelemetry-based telemetry and logging SDK for AI agents, providing industry-standard observability and monitoring capabilities for agent workflows, model calls, and tool executions.
+AbideX is an SDK for AI agents, providing industry-standard observability and monitoring capabilities for agent workflows, model calls, and tool executions.
 
 ## Features
 
 - **OpenTelemetry Native**: Built entirely on OpenTelemetry - all functions use OpenTelemetry APIs
 - **Comprehensive Telemetry**: Track agent runs, model calls, and tool executions with detailed context
+- **HTTP Collector**: FastAPI-based collector for centralized telemetry gathering
 - **Enhanced Event Schema**: Built-in latency tracking, token counting, and performance metrics
-- **Multiple Sinks**: Export data to JSONL files, HTTP endpoints, OTLP (OpenTelemetry Protocol), or Prometheus metrics
-- **Framework Adapters**: Built-in support for popular AI frameworks (Claude, CrewAI, n8n)
-- **Automatic Instrumentation**: Decorator and monkey-patching support for popular AI libraries
-- **Telemetry Logging**: Integrated logging that combines Python logging with telemetry
 - **Sampling Support**: Configurable sampling rates for high-volume scenarios
 - **Data Privacy**: Automatic redaction of sensitive information
 - **Easy Integration**: Simple context managers and decorators for minimal code changes
-- **HTTP Collector**: FastAPI-based collector for centralized telemetry gathering
+- **Multiple Sinks**: Export data to JSONL files, HTTP endpoints, OTLP (OpenTelemetry Protocol), or Prometheus metrics
+- **Framework Adapters**: Built-in support for popular AI frameworks (Claude, CrewAI, n8n)
+- **Automatic Instrumentation**: Decorator and monkey-patching support for popular AI libraries
+
+## Technology Stack
+
+### Core Technologies
+
+- **Python 3.8+**: Modern Python with type hints and async support
+- **OpenTelemetry**: Industry-standard observability framework
+ 
+### Core Dependencies
+
+- **FastAPI**: Modern, fast web framework for the HTTP collector
+- **Uvicorn**: ASGI server for running the collector
+- **Pydantic**: Data validation and settings management
+- **Requests**: HTTP client for external API calls
+
+### Optional Dependencies
+
+- **Prometheus Client**: For Prometheus metrics export
+- **Anthropic SDK**: For Claude AI integration
+- **CrewAI**: For CrewAI framework integration
+
+### Development Tools
+
+- **pytest**: Testing framework
+- **black**: Code formatter
+- **isort**: Import sorter
+- **flake8**: Linter
+- **mypy**: Type checker
+- **pre-commit**: Git hooks for code quality
+
+### Compatible Backends
+
+AbideX works with any OpenTelemetry-compatible backend:
+
+- **Jaeger**: Distributed tracing backend
+- **Zipkin**: Distributed tracing system
+- **Prometheus**: Metrics and monitoring
+- **Grafana**: Visualization and dashboards
+- **Datadog**: APM and monitoring
+- **New Relic**: Application performance monitoring
+- **Honeycomb**: Observability platform
+- **Lightstep**: Observability platform
+- **Any OTLP-compatible backend**: Via OTLP exporter
+
+### Package Management
+
+- **pip**: Standard Python package installer
+- **uv**: Fast Python package installer (recommended)
 
 ## Installation
 
