@@ -7,6 +7,7 @@ for distributed tracing, metrics, and logging.
 
 import json
 import time
+import threading
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol, Union
@@ -17,7 +18,7 @@ from contextlib import contextmanager
 # OpenTelemetry imports
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -325,17 +326,21 @@ class TelemetryClient:
         self.tracer_provider = TracerProvider(resource=resource)
         
         # Set up span exporters
+        # Use SimpleSpanProcessor for console (no background threads) to avoid hanging
+        # Use BatchSpanProcessor for OTLP (better performance with batching)
         if otlp_endpoint:
             span_exporter = OTLPSpanExporter(
                 endpoint=otlp_endpoint + "/v1/traces",
                 headers=otlp_headers or {}
             )
+            # Store reference to span processor for proper shutdown
+            self.span_processor = BatchSpanProcessor(span_exporter)
         else:
             span_exporter = ConsoleSpanExporter()
+            # Use SimpleSpanProcessor for console to avoid background threads
+            self.span_processor = SimpleSpanProcessor(span_exporter)
         
-        self.tracer_provider.add_span_processor(
-            BatchSpanProcessor(span_exporter)
-        )
+        self.tracer_provider.add_span_processor(self.span_processor)
         
         # Set as global tracer provider
         trace.set_tracer_provider(self.tracer_provider)
@@ -347,20 +352,22 @@ class TelemetryClient:
         )
         
         # Set up metric exporters
+        # For console mode, don't use PeriodicExportingMetricReader to avoid background threads
+        # Metrics can still be recorded but won't be exported (prevents hanging)
         metric_readers = []
         if otlp_endpoint:
             metric_exporter = OTLPMetricExporter(
                 endpoint=otlp_endpoint + "/v1/metrics",
                 headers=otlp_headers or {}
             )
-            metric_readers.append(
-                PeriodicExportingMetricReader(metric_exporter)
-            )
+            metric_reader = PeriodicExportingMetricReader(metric_exporter)
+            metric_readers.append(metric_reader)
+            # Store reference to metric reader for proper shutdown
+            self.metric_reader = metric_reader
         else:
-            metric_exporter = ConsoleMetricExporter()
-            metric_readers.append(
-                PeriodicExportingMetricReader(metric_exporter)
-            )
+            # For console mode, don't export metrics (no background threads = no hanging)
+            # Metrics can still be recorded but won't be exported
+            self.metric_reader = None
         
         # Initialize MeterProvider with metric readers
         self.meter_provider = MeterProvider(
@@ -723,11 +730,44 @@ class TelemetryClient:
                 print(f"Warning: Failed to close sink {sink}: {e}")
         self.sinks.clear()
         
+        # Flush span processor before shutdown to ensure all spans are exported
+        # SimpleSpanProcessor doesn't have force_flush (it's synchronous)
+        if hasattr(self, 'span_processor') and self.span_processor:
+            try:
+                # Only flush if it's a BatchSpanProcessor
+                if isinstance(self.span_processor, BatchSpanProcessor):
+                    self.span_processor.force_flush(timeout_millis=2000)
+            except Exception as e:
+                print(f"Warning: Failed to flush span processor: {e}")
+        
+        # Shutdown metric reader first if it exists (only for OTLP mode)
+        if hasattr(self, 'metric_reader') and self.metric_reader:
+            try:
+                shutdown_done = threading.Event()
+                def shutdown_metric_reader():
+                    try:
+                        self.metric_reader.shutdown()
+                    finally:
+                        shutdown_done.set()
+                
+                thread = threading.Thread(target=shutdown_metric_reader, daemon=True)
+                thread.start()
+                shutdown_done.wait(timeout=1.0)  # 1 second timeout
+            except Exception as e:
+                print(f"Warning: Failed to shutdown metric reader: {e}")
+        
         # Shutdown OpenTelemetry providers
+        # SimpleSpanProcessor doesn't have background threads, so shutdown should be quick
         if self.tracer_provider:
-            self.tracer_provider.shutdown()
+            try:
+                self.tracer_provider.shutdown()
+            except Exception as e:
+                print(f"Warning: Failed to shutdown tracer provider: {e}")
         if self.meter_provider:
-            self.meter_provider.shutdown()
+            try:
+                self.meter_provider.shutdown()
+            except Exception as e:
+                print(f"Warning: Failed to shutdown meter provider: {e}")
     
     @contextmanager
     def infer(

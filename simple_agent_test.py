@@ -182,6 +182,10 @@ def main():
     print("• Performance metrics are automatically tracked")
     print("• All data is JSON structured for easy analysis")
     print("• Events can be sent to multiple sinks (files, HTTP, Prometheus)")
+    
+    # Force immediate exit to prevent hanging
+    import os
+    os._exit(0)
 
 
 if __name__ == "__main__":

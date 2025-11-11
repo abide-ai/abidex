@@ -810,6 +810,10 @@ def main():
     print("1. Open the generated fraud_detection_logs_*.jsonl file")
     print("2. Use the Jupyter notebook to analyze all the telemetry data")
     print("3. Explore agent performance, risk patterns, and system metrics")
+    
+    # Force immediate exit to prevent hanging
+    import os
+    os._exit(0)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 from typing import Optional, TextIO
-from threading import Lock
+from threading import RLock
 
 from ..client import Event, TelemetrySink
 from ..utils.redaction import redact_sensitive_data
@@ -32,7 +32,7 @@ class JSONLSink:
         self.max_file_size = max_file_size
         self.backup_count = backup_count
         self._file: Optional[TextIO] = None
-        self._lock = Lock()
+        self._lock = RLock()  # Use reentrant lock to avoid deadlock in close()
         
         # Create directories if needed
         if create_dirs:

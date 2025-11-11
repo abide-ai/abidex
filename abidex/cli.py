@@ -476,13 +476,13 @@ def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
     package_dir = Path(__file__).parent.parent
     demo_dir = package_dir
     
-    if demo == "simple":
+    if demo in ("simple", "weather"):
         demo_script = demo_dir / "simple_agent_test.py"
         if not demo_script.exists():
             print(f"Error: Demo script not found at {demo_script}")
             sys.exit(1)
         
-        print(" Running Simple Agent Logging Demo...")
+        print(" Running Weather Agent Logging Demo...")
         print("=" * 50)
         
         # Run the simple agent test
@@ -921,8 +921,8 @@ Examples:
         description="Run demo scenarios to test agent logging and telemetry",
         epilog="""
 Examples:
-  # Run simple weather agent demo
-  abidex eval simple
+  # Run weather agent demo
+  abidex eval weather
   
   # Run fraud detection demo with 50 transactions
   abidex eval fraud --transactions 50
@@ -931,8 +931,8 @@ Examples:
   abidex eval fraud --transactions 100 --output-dir ./logs
         """
     )
-    eval_parser.add_argument("demo", choices=["simple", "fraud"], 
-                            help="Which demo to run: 'simple' for basic agent logging, 'fraud' for fraud detection pipeline")
+    eval_parser.add_argument("demo", choices=["simple", "weather", "fraud"], 
+                            help="Which demo to run: 'weather' (or 'simple') for weather agent logging, 'fraud' for fraud detection pipeline")
     eval_parser.add_argument("--transactions", type=int, default=25,
                             help="Number of transactions to process (for fraud demo)")
     eval_parser.add_argument("--output-dir", default=".", help="Directory to save log files")

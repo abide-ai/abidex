@@ -358,6 +358,26 @@ class AgentLogger(TelemetryLogger):
             **kwargs
         )
     
+    def with_context(
+        self,
+        run_id: Optional[str] = None,
+        span_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None
+    ) -> 'AgentLogger':
+        """Create a new agent logger with additional context."""
+        new_logger = AgentLogger(
+            agent_name=self.agent_name,
+            client=self.client,
+            agent_role=self.agent_role,
+            run_id=run_id or self.run_id,
+            span_id=span_id or self.span_id
+        )
+        
+        if tags:
+            new_logger.client.default_tags.update(tags)
+        
+        return new_logger
+    
     def observation(
         self,
         observation: str,
