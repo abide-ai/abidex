@@ -68,35 +68,35 @@ AbideX works with any OpenTelemetry-compatible backend:
 ### Basic Installation
 
 ```bash
+# Recommended: using uv (fast, creates environment automatically)
+uv install abidex
+
 # Using pip
 pip install abidex
-
-# Using uv (faster)
-uv pip install abidex
 ```
 
 ### With Optional Dependencies
 
 ```bash
-# For Prometheus metrics
-pip install abidex[prometheus]
-# or with uv
-uv pip install "abidex[prometheus]"
+# Prometheus metrics
+uv install "abidex[prometheus]"
+# or
+pip install "abidex[prometheus]"
 
-# For Claude integration
-pip install abidex[claude]
-# or with uv
-uv pip install "abidex[claude]"
+# Claude integration
+uv install "abidex[claude]"
+# or
+pip install "abidex[claude]"
 
-# For CrewAI integration  
-pip install abidex[crew]
-# or with uv
-uv pip install "abidex[crew]"
+# CrewAI integration
+uv install "abidex[crew]"
+# or
+pip install "abidex[crew]"
 
 # All optional features
-pip install abidex[all]
-# or with uv
-uv pip install "abidex[all]"
+uv install "abidex[all]"
+# or
+pip install "abidex[all]"
 ```
 
 **Note**: The HTTP collector dependencies (FastAPI, uvicorn) are now included by default, so the collector command works out of the box.
