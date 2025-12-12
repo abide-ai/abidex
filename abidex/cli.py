@@ -364,7 +364,7 @@ def collector_main(args=None):
         args: Parsed arguments (Namespace object). If None, will parse from sys.argv.
     """
     if not COLLECTOR_AVAILABLE:
-        print("Error: Collector is not available. Install with: pip install abidex[collector]")
+        print("Error: Collector is not available. Install with: uv add abidex[collector] (or pip install abidex[collector])")
         sys.exit(1)
     
     # If args not provided, parse them (for standalone usage)
@@ -432,7 +432,7 @@ def collector_main(args=None):
         args = parser.parse_args()
     
     if not UVICORN_AVAILABLE:
-        print("Error: uvicorn is required to run the collector. Install with: pip install abidex[collector]")
+        print("Error: uvicorn is required to run the collector. Install with: uv add abidex[collector] (or pip install abidex[collector])")
         sys.exit(1)
     
     # Set up telemetry client with optional sinks

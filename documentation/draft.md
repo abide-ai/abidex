@@ -2,18 +2,20 @@
 
 ## Table of Contents
 1. [CLI Workflow & Command Execution](#cli-workflow--command-execution)
-2. [High-Level Architecture](#high-level-architecture)
-3. [Component Flow](#component-flow)
-4. [Data Flow](#data-flow)
-5. [Design Decisions](#design-decisions)
-6. [Data Structures & Key Variables](#data-structures--key-variables)
-7. [Data Capture Points](#data-capture-points)
-8. [File-by-File Breakdown](#file-by-file-breakdown)
-9. [Code Flow & Patterns](#code-flow--patterns)
-10. [OpenTelemetry Integration](#opentelemetry-integration)
-11. [Integration Points](#integration-points)
-12. [Performance & Security](#performance--security)
-13. [Component-to-File Mapping](#component-to-file-mapping)
+2. [CLI Usage Guide](#cli-usage-guide)
+3. [Querying Agents and Pipelines](#querying-agents-and-pipelines)
+4. [High-Level Architecture](#high-level-architecture)
+5. [Component Flow](#component-flow)
+6. [Data Flow](#data-flow)
+7. [Design Decisions](#design-decisions)
+8. [Data Structures & Key Variables](#data-structures--key-variables)
+9. [Data Capture Points](#data-capture-points)
+10. [File-by-File Breakdown](#file-by-file-breakdown)
+11. [Code Flow & Patterns](#code-flow--patterns)
+12. [OpenTelemetry Integration](#opentelemetry-integration)
+13. [Integration Points](#integration-points)
+14. [Performance & Security](#performance--security)
+15. [Component-to-File Mapping](#component-to-file-mapping)
 
 ---
 
@@ -353,6 +355,410 @@ abidex evals
 - `--auth-token`: Authentication token
 - `--cors`: Enable CORS
 - `--host`: Bind address
+
+---
+
+## CLI Usage Guide
+
+### Installation
+
+After installing the package, the CLI commands are available:
+
+```bash
+# Install the package (if not already installed)
+pip install -e .
+```
+
+### Available Commands
+
+#### `abidex eval` - Run Agent Demos
+
+Run demo scenarios to test agent logging and telemetry:
+
+```bash
+# Run simple agent logging demo
+abidex eval simple
+
+# Run fraud detection pipeline demo
+abidex eval fraud
+
+# Run fraud detection with custom transaction count
+abidex eval fraud --transactions 50
+```
+
+**Options:**
+- `simple` - Basic agent logging demonstration
+- `fraud` - Complete fraud detection pipeline with 3 agents
+- `--transactions N` - Number of transactions to process (default: 25, fraud demo only)
+- `--output-dir DIR` - Directory to save log files (default: current directory)
+
+#### `abidex logs` - Analyze Telemetry Logs
+
+Analyze and visualize telemetry data from agent runs:
+
+```bash
+# List all log files
+abidex logs list
+
+# List fraud detection logs
+abidex logs list --pattern "fraud_detection_logs*.jsonl"
+
+# Get quick summary of logs
+abidex logs summary
+
+# Get summary of specific pattern
+abidex logs summary --pattern "simple_agent_logs*.jsonl"
+
+# List all agents found in logs
+abidex logs agents
+
+# List all agents from fraud detection logs
+abidex logs agents --pattern "fraud_detection_logs*.jsonl"
+
+# List all pipelines found in logs
+abidex logs pipelines
+
+# List pipelines from specific pattern
+abidex logs pipelines --pattern "*agent_logs*.jsonl"
+
+# Open Jupyter notebook for analysis
+abidex logs analyze
+
+# Open fraud detection analysis notebook
+abidex logs analyze --notebook fraud
+
+# Open notebook on custom port
+abidex logs analyze --port 9999
+```
+
+**Subcommands:**
+- `list` - List all log files matching pattern with file sizes
+- `summary` - Quick statistics about events, agents, and event types
+- `agents` - List all unique agents with details (role, version, runs, timestamps)
+- `pipelines` - List all unique pipelines with details (agents, runs, timestamps)
+- `analyze` - Opens Jupyter notebook for interactive analysis
+
+**Options:**
+- `--pattern PATTERN` - Glob pattern to match log files (default: `*agent_logs*.jsonl`)
+- `--notebook {agent,fraud}` - Which notebook to open (default: `agent`)
+- `--port PORT` - Port for Jupyter notebook server (default: 8888)
+
+#### `abidex collector` - Start Telemetry Collector
+
+Start the HTTP collector server for receiving telemetry events:
+
+```bash
+abidex collector --port 8000
+```
+
+### Complete Workflow Examples
+
+#### Example 1: Complete Analysis Workflow
+
+```bash
+# 1. Run the fraud detection demo
+abidex eval fraud --transactions 30
+
+# 2. Check what logs were generated
+abidex logs list
+
+# 3. Get a quick summary
+abidex logs summary --pattern "fraud_detection_logs*.jsonl"
+
+# 4. Open the analysis notebook
+abidex logs analyze --notebook fraud
+```
+
+#### Example 2: Quick Test
+
+```bash
+# Run simple demo
+abidex eval simple
+
+# View the logs
+abidex logs list
+abidex logs summary
+```
+
+### What Gets Generated
+
+#### Simple Demo (`eval simple`)
+- Generates: `simple_agent_logs_YYYYMMDD_HHMMSS.jsonl`
+- Shows: Basic agent logging, model calls, metrics, errors
+
+#### Fraud Detection Demo (`eval fraud`)
+- Generates: `fraud_detection_logs_YYYYMMDD_HHMMSS.jsonl`
+- Shows: Complete 3-agent pipeline with:
+  - Agent thinking, actions, decisions, observations
+  - Risk analysis and fraud detection
+  - Multi-channel alerting
+  - Comprehensive telemetry
+
+### Analysis Notebooks
+
+The `logs analyze` command opens Jupyter notebooks that provide:
+
+- **Agent Logs Analysis** (`--notebook agent`):
+  - General agent telemetry analysis
+  - Event type distributions
+  - Performance metrics
+  - Time series analysis
+
+- **Fraud Detection Analysis** (`--notebook fraud`):
+  - Specialized fraud detection metrics
+  - Agent behavior analysis (thinking, actions, decisions)
+  - Risk assessment patterns
+  - Decision reasoning quality
+  - OpenTelemetry-style comprehensive metrics
+
+### Requirements
+
+- **For demos**: No additional requirements (uses core SDK)
+- **For analysis**: `jupyter` and `pandas` (install with `pip install jupyter pandas matplotlib seaborn`)
+- **For collector**: `fastapi` and `uvicorn` (install with `uv add abidex[collector]` or `pip install abidex[collector]`)
+
+### Troubleshooting
+
+**Command not found:**
+```bash
+# Make sure package is installed
+pip install -e .
+
+# Or use Python module syntax
+python -m abidex.cli eval simple
+```
+
+**Notebook not found:**
+- Make sure you've run a demo first to generate log files
+- The notebooks are in the package directory
+
+**Import errors:**
+- Install optional dependencies: `pip install jupyter pandas matplotlib seaborn`
+- For collector: `uv add abidex[collector]` (or `pip install abidex[collector]`)
+
+---
+
+## Querying Agents and Pipelines
+
+### Overview
+
+This section provides a quick reference for discovering and querying agents and pipelines in your telemetry data using both CLI commands and Jupyter notebook queries.
+
+### CLI Commands for Discovery
+
+#### List All Agents
+
+```bash
+# List all agents from all log files
+abidex logs agents
+
+# List agents from specific log pattern
+abidex logs agents --pattern "fraud_detection_logs*.jsonl"
+
+# List agents from simple agent logs
+abidex logs agents --pattern "simple_agent_logs*.jsonl"
+```
+
+**Output includes:**
+- Agent name
+- Role (if available)
+- Version (if available)
+- Total events
+- Unique runs
+- First seen / Last seen timestamps
+
+#### List All Pipelines
+
+```bash
+# List all pipelines from all log files
+abidex logs pipelines
+
+# List pipelines from specific pattern
+abidex logs pipelines --pattern "fraud_detection_logs*.jsonl"
+```
+
+**Output includes:**
+- Pipeline ID
+- Total events
+- Unique runs
+- Associated agents
+- First seen / Last seen timestamps
+
+### Jupyter Notebook Queries
+
+The fraud detection analysis notebook includes a dedicated section for agent and pipeline discovery. You can also use these pandas queries:
+
+#### Get All Unique Agents
+
+```python
+# Simple list of agent names
+unique_agents = df['agent_name'].dropna().unique()
+print(unique_agents)
+
+# Detailed agent summary
+agent_summary = df[df['agent_name'].notna()].groupby('agent_name').agg({
+    'event_id': 'count',
+    'agent_role': 'first',
+    'agent_version': 'first',
+    'run_id': 'nunique',
+    'timestamp': ['min', 'max']
+})
+print(agent_summary)
+```
+
+#### Get All Pipelines
+
+```python
+# Extract pipelines from metadata
+pipelines = []
+for idx, row in df[df['metadata_json'].notna()].iterrows():
+    try:
+        metadata = json.loads(row['metadata_json'])
+        pipeline_id = metadata.get('pipeline_id') or metadata.get('pipeline') or metadata.get('system')
+        if pipeline_id:
+            pipelines.append(pipeline_id)
+    except:
+        pass
+
+unique_pipelines = list(set(pipelines))
+print(unique_pipelines)
+```
+
+#### Query Events by Agent
+
+```python
+# Get all events for a specific agent
+risk_agent_events = df[df['agent_name'] == 'Risk Analysis Agent']
+
+# Get agent performance metrics
+agent_perf = df[df['agent_name'] == 'Data Collection Agent'].groupby('event_type').agg({
+    'latency_ms': 'mean',
+    'success': 'mean'
+})
+```
+
+#### Query Events by Pipeline
+
+```python
+# Get all events for a specific pipeline
+fraud_pipeline_events = df[
+    (df['metadata_json'].str.contains('fraud_detection', na=False)) |
+    (df['tags_json'].str.contains('fraud_detection', na=False))
+]
+
+# Get pipeline summary
+pipeline_summary = fraud_pipeline_events.groupby('agent_name').agg({
+    'event_id': 'count',
+    'latency_ms': 'mean',
+    'success': 'mean'
+})
+```
+
+#### Agent-Pipeline Relationships
+
+```python
+# Find which agents work in which pipelines
+agent_pipeline = df.groupby(['agent_name', 'metadata_json']).size()
+
+# Or extract from metadata
+agent_pipeline_map = {}
+for idx, row in df[df['metadata_json'].notna()].iterrows():
+    try:
+        metadata = json.loads(row['metadata_json'])
+        pipeline_id = metadata.get('pipeline_id') or metadata.get('pipeline')
+        agent_name = row['agent_name']
+        
+        if pipeline_id and agent_name:
+            if pipeline_id not in agent_pipeline_map:
+                agent_pipeline_map[pipeline_id] = set()
+            agent_pipeline_map[pipeline_id].add(agent_name)
+    except:
+        pass
+
+for pipeline, agents in agent_pipeline_map.items():
+    print(f"{pipeline}: {', '.join(agents)}")
+```
+
+### Quick Query Examples
+
+#### Find Most Active Agent
+
+```python
+most_active = df['agent_name'].value_counts().head(1)
+print(f"Most active agent: {most_active.index[0]} with {most_active.values[0]} events")
+```
+
+#### Find Agents in a Specific Pipeline
+
+```python
+pipeline_agents = df[
+    df['metadata_json'].str.contains('fraud_detection', na=False)
+]['agent_name'].unique()
+print(f"Agents in fraud detection pipeline: {pipeline_agents}")
+```
+
+#### Get Agent Statistics
+
+```python
+agent_stats = df.groupby('agent_name').agg({
+    'event_id': 'count',
+    'latency_ms': ['mean', 'std', 'min', 'max'],
+    'success': 'mean',
+    'total_tokens': 'sum'
+})
+print(agent_stats)
+```
+
+#### Get Pipeline Statistics
+
+```python
+# Filter by pipeline
+pipeline_events = df[df['tags_json'].str.contains('fraud_detection', na=False)]
+
+pipeline_stats = pipeline_events.groupby('agent_name').agg({
+    'event_id': 'count',
+    'latency_ms': 'mean',
+    'success': 'mean'
+})
+print(pipeline_stats)
+```
+
+### Using the CLI vs Notebook
+
+**Use CLI when:**
+- Quick discovery of what agents/pipelines exist
+- Command-line automation
+- Quick checks before detailed analysis
+
+**Use Notebook when:**
+- Need detailed analysis and visualizations
+- Want to explore relationships
+- Need custom queries and filtering
+- Creating reports and dashboards
+
+### Query Tips
+
+1. **Pipeline Identification**: Pipelines are identified by:
+   - `metadata.pipeline_id`
+   - `metadata.pipeline`
+   - `metadata.system`
+   - `tags.pipeline`
+   - `tags.system`
+
+2. **Agent Information**: Agent details are in:
+   - `agent.name` - Agent name
+   - `agent.role` - Agent role (e.g., "decision-maker", "data-processor")
+   - `agent.version` - Agent version
+
+3. **Filtering**: Use pandas boolean indexing for complex queries:
+   ```python
+   # Multiple conditions
+   filtered = df[
+       (df['agent_name'] == 'Risk Analysis Agent') &
+       (df['latency_ms'] > 100) &
+       (df['success'] == True)
+   ]
+   ```
 
 ---
 
