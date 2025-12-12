@@ -11,7 +11,7 @@ import threading
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol, Union
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, is_dataclass
 from uuid import uuid4
 from contextlib import contextmanager
 
@@ -54,8 +54,8 @@ class ActionInfo:
     """Action/tool call information structure."""
     type: Optional[str] = None  # 'tool_call', 'api_call', etc.
     name: Optional[str] = None
-    input: Optional[str] = None
-    output: Optional[str] = None
+    input: Optional[Any] = None
+    output: Optional[Any] = None
     success: bool = True
     latency_ms: Optional[float] = None
 
@@ -65,8 +65,8 @@ class ModelCallInfo:
     """Model call information structure."""
     backend: Optional[str] = None
     model: Optional[str] = None
-    prompt_preview: Optional[str] = None
-    completion_preview: Optional[str] = None
+    prompt_preview: Optional[Any] = None
+    completion_preview: Optional[Any] = None
     input_token_count: Optional[int] = None
     output_token_count: Optional[int] = None
 
@@ -138,10 +138,56 @@ class Event:
     def timestamp(self) -> float:
         """Backward compatibility property."""
         return self.telemetry.timestamp_start
+
+    @staticmethod
+    def _serialize_value(value: Any, max_string_length: Optional[int] = None) -> Any:
+        """
+        Recursively convert objects (including dataclasses) into JSON-serializable data.
+        Optionally truncates string values while keeping the surrounding structure intact.
+        """
+        def _truncate(text: str) -> str:
+            if max_string_length is not None and len(text) > max_string_length:
+                return text[:max_string_length] + "..."
+            return text
+
+        if is_dataclass(value):
+            return {
+                key: Event._serialize_value(val, max_string_length)
+                for key, val in asdict(value).items()
+            }
+        if isinstance(value, dict):
+            return {
+                key: Event._serialize_value(val, max_string_length)
+                for key, val in value.items()
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [Event._serialize_value(v, max_string_length) for v in value]
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, str):
+            return _truncate(value)
+        if isinstance(value, (int, float, bool)) or value is None:
+            return value
+        if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+            try:
+                return Event._serialize_value(value.to_dict(), max_string_length)
+            except Exception:
+                pass
+        if hasattr(value, "__dict__"):
+            return {
+                key: Event._serialize_value(val, max_string_length)
+                for key, val in value.__dict__.items()
+                if not key.startswith("_")
+            }
+        try:
+            json_compatible = json.loads(json.dumps(value))
+            return Event._serialize_value(json_compatible, max_string_length)
+        except Exception:
+            return _truncate(str(value))
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert event to dictionary format matching the structured schema."""
-        result = asdict(self)
+        result = self._serialize_value(self)
         
         # Add ISO timestamps to telemetry section
         if 'telemetry' in result and result['telemetry']:
@@ -223,21 +269,19 @@ class Event:
         self.action.name = name
         
         if input_data is not None:
-            # Truncate long inputs for preview
-            input_str = str(input_data)
-            self.action.input = input_str[:200] + "..." if len(input_str) > 200 else input_str
+            # Truncate long inputs for preview while preserving structure
+            self.action.input = self._serialize_value(input_data, max_string_length=200)
         
         if output_data is not None:
-            # Truncate long outputs for preview
-            output_str = str(output_data)
-            self.action.output = output_str[:500] + "..." if len(output_str) > 500 else output_str
+            # Truncate long outputs for preview while preserving structure
+            self.action.output = self._serialize_value(output_data, max_string_length=500)
     
     def set_model_call_info(
         self,
         backend: str,
         model: str,
-        prompt: Optional[str] = None,
-        completion: Optional[str] = None,
+        prompt: Optional[Any] = None,
+        completion: Optional[Any] = None,
         input_tokens: Optional[int] = None,
         output_tokens: Optional[int] = None
     ) -> None:
@@ -249,12 +293,12 @@ class Event:
         self.model_call.model = model
         
         if prompt is not None:
-            # Create preview of prompt
-            self.model_call.prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
+            # Create preview of prompt while preserving nested structures
+            self.model_call.prompt_preview = self._serialize_value(prompt, max_string_length=500)
         
         if completion is not None:
-            # Create preview of completion
-            self.model_call.completion_preview = completion[:500] + "..." if len(completion) > 500 else completion
+            # Create preview of completion while preserving nested structures
+            self.model_call.completion_preview = self._serialize_value(completion, max_string_length=500)
         
         if input_tokens is not None:
             self.model_call.input_token_count = input_tokens
