@@ -14,8 +14,9 @@
 11. [Code Flow & Patterns](#code-flow--patterns)
 12. [OpenTelemetry Integration](#opentelemetry-integration)
 13. [Integration Points](#integration-points)
-14. [Performance & Security](#performance--security)
-15. [Component-to-File Mapping](#component-to-file-mapping)
+14. [Enhanced Features & Advanced Usage](#enhanced-features--advanced-usage)
+15. [Performance & Security](#performance--security)
+16. [Component-to-File Mapping](#component-to-file-mapping)
 
 ---
 
@@ -1948,6 +1949,312 @@ logger.action("...")
   "trace_id": "trace-789"
 }
 ```
+
+---
+
+## Enhanced Features & Advanced Usage
+
+This section documents advanced features and usage patterns demonstrated in `examples/enhanced_usage.py`. These features extend the core functionality with production-ready capabilities.
+
+### 1. Sampling Support
+
+**Purpose**: Reduce telemetry overhead in high-volume scenarios by sampling a percentage of events.
+
+**Usage**:
+```python
+# Create client with 80% sampling rate
+client = TelemetryClient(
+    agent_id="high_volume_agent",
+    sample_rate=0.8,  # Sample 80% of events
+    sinks=[JSONLSink("telemetry.jsonl")]
+)
+
+# For very high volume, use lower sampling
+high_volume_client = TelemetryClient(
+    agent_id="high_volume_agent",
+    sample_rate=0.1,  # Only sample 10%
+    sinks=[JSONLSink("high_volume.jsonl")]
+)
+```
+
+**How It Works**:
+- Each event is randomly sampled based on `sample_rate` (0.0-1.0)
+- Sampled events have `event.sampled = True` and are fully processed
+- Non-sampled events have `event.sampled = False` and are skipped
+- Sampling decision is made in `TelemetryClient.emit()` before processing
+
+**When to Use**:
+- High-volume production deployments
+- Cost-sensitive scenarios
+- Performance-critical applications
+
+**Reference**: `examples/enhanced_usage.py` (sections 1, 10)
+
+### 2. Enhanced Event Schema with Performance Tracking
+
+**Purpose**: Track detailed performance metrics including token counts, character lengths, and latency.
+
+**Usage**:
+```python
+with client.infer("gpt-4", "openai", batch_size=3) as event:
+    # Make your API call
+    response = openai_client.chat.completions.create(...)
+    
+    # Set detailed metrics
+    event.input_token_count = 150
+    event.output_token_count = 75
+    event.total_tokens = 225
+    event.prompt_char_length = 600
+    event.response_char_length = 300
+    # Latency is automatically calculated
+```
+
+**Enhanced Fields**:
+- `input_token_count`: Input tokens to the model
+- `output_token_count`: Output tokens from the model
+- `total_tokens`: Sum of input + output tokens
+- `prompt_char_length`: Character length of prompt
+- `response_char_length`: Character length of response
+- `latency_ms`: Automatically calculated from timestamps
+
+**Reference**: `examples/enhanced_usage.py` (section 2)
+
+### 3. Decorator-Based Instrumentation
+
+**Purpose**: Automatically track function calls using Python decorators.
+
+**Usage**:
+```python
+@client.record(model="custom-model", backend="demo")
+def simulate_ai_task(prompt, max_tokens=100):
+    """Simulate an AI task that we want to track."""
+    time.sleep(0.05)  # Simulate processing
+    return f"Response to: {prompt[:50]}..."
+
+# Function calls are automatically tracked
+result = simulate_ai_task("What is the meaning of life?", max_tokens=150)
+```
+
+**How It Works**:
+- Decorator wraps function execution
+- Creates a span for each function call
+- Automatically tracks timing and parameters
+- Records to telemetry client
+
+**Reference**: `examples/enhanced_usage.py` (section 3)
+
+### 4. Telemetry Logging Integration
+
+**Purpose**: Structured logging that integrates with telemetry system.
+
+**Usage**:
+```python
+from abidex import get_logger, get_agent_logger
+
+# Standard telemetry logger
+logger = get_logger("demo_logger", client=client)
+logger.info("This is a log message", data={"user_id": "123", "action": "demo"})
+
+# Agent-specific logger with specialized methods
+agent_logger = get_agent_logger("demo_agent", client=client)
+agent_logger.thinking("I need to process this request...")
+agent_logger.action("processing_request", details={"complexity": "medium"})
+agent_logger.decision("use_gpt4", reasoning="Complex query requires advanced model")
+
+# Logger with context
+run_logger = logger.with_context(run_id=run.run_id, span_id=run.span_id)
+run_logger.info("Processing within agent run")
+```
+
+**Agent Logger Methods**:
+- `thinking(message)`: Log agent internal thoughts (debug level)
+- `action(name, details=None)`: Log agent actions (info level)
+- `decision(name, reasoning=None)`: Log agent decisions (info level)
+- `observation(message, data=None)`: Log agent observations (info level)
+
+**Reference**: `examples/enhanced_usage.py` (section 4)
+
+### 5. Automatic Instrumentation
+
+**Purpose**: Automatically instrument AI library clients (OpenAI, Anthropic, etc.) without code changes.
+
+**Usage**:
+```python
+from abidex import instrumentation
+
+# Instrument an OpenAI client
+openai_client = OpenAI()
+instrumented_client = instrumentation.instrument_openai_client(
+    openai_client, 
+    telemetry_client=client
+)
+
+# All calls are automatically tracked
+response = instrumented_client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Hello, world!"}]
+)
+```
+
+**Custom Function Instrumentation**:
+```python
+def extract_token_count(result, *args, **kwargs):
+    # Custom token extractor
+    return {"output_tokens": len(str(result).split())}
+
+@instrumentation.create_instrumented_function(
+    lambda prompt: f"AI response to: {prompt}",
+    telemetry_client=client,
+    model="custom-ai",
+    backend="demo",
+    extract_tokens=extract_token_count
+)
+def custom_ai_function(prompt):
+    time.sleep(0.05)
+    return f"Intelligent response to: {prompt}"
+```
+
+**Supported Libraries**:
+- OpenAI (via `instrument_openai_client()`)
+- Anthropic Claude (via adapters)
+- Custom functions (via `create_instrumented_function()`)
+
+**Reference**: `examples/enhanced_usage.py` (sections 6, 7)
+
+### 6. Batch Event Creation
+
+**Purpose**: Efficiently create and emit multiple events in batch.
+
+**Usage**:
+```python
+# Create multiple events quickly
+events = []
+for i in range(5):
+    event = client.new_event(
+        model=f"model-{i}",
+        backend="batch_demo",
+        tags={"batch_id": "demo_batch", "index": str(i)}
+    )
+    event.input_token_count = 10 + i
+    event.output_token_count = 5 + i
+    event.finish()  # Mark event as complete
+    events.append(event)
+
+# Emit all events
+for event in events:
+    client.emit(event)
+```
+
+**When to Use**:
+- Bulk processing scenarios
+- Batch API calls
+- High-throughput applications
+
+**Reference**: `examples/enhanced_usage.py` (section 8)
+
+### 7. Standard Python Logging Integration
+
+**Purpose**: Integrate AbideX telemetry with standard Python logging module.
+
+**Usage**:
+```python
+from abidex import setup_telemetry_logging
+import logging
+
+# Set up telemetry logging for all Python loggers
+setup_telemetry_logging(client=client, level=logging.INFO)
+
+# Now standard Python logging also goes to telemetry
+py_logger = logging.getLogger("demo.standard")
+py_logger.info("This standard log message also goes to telemetry!")
+py_logger.error("This error is tracked in telemetry too!")
+```
+
+**How It Works**:
+- Adds `TelemetryLogHandler` to root logger
+- All Python logging calls are captured
+- Logs are converted to telemetry events
+- Respects log level configuration
+
+**Benefits**:
+- No code changes needed for existing logging
+- Unified logging and telemetry
+- Works with any Python logging library
+
+**Reference**: `examples/enhanced_usage.py` (section 9)
+
+### 8. Prometheus Metrics Export
+
+**Purpose**: Export metrics to Prometheus for monitoring and alerting.
+
+**Usage**:
+```python
+from abidex.sinks import PrometheusSink
+
+# Add Prometheus sink
+try:
+    client.add_sink(PrometheusSink(metric_prefix="demo_agent"))
+    print("Prometheus metrics enabled")
+except ImportError:
+    print("Prometheus not available, skipping metrics")
+```
+
+**Metrics Exported**:
+- Model call counts
+- Model latency histograms
+- Error counts
+- Custom metrics via `client.metric()`
+
+**Requirements**:
+- `prometheus-client` package must be installed
+- Prometheus server must be configured to scrape metrics endpoint
+
+**Reference**: `examples/enhanced_usage.py` (section 1)
+
+### 9. Enhanced Agent Run Tracking
+
+**Purpose**: Track agent runs with additional context and data.
+
+**Usage**:
+```python
+with AgentRun("enhanced_demo_run", client=client) as run:
+    # Add custom data to the run
+    run.add_data("task", "demonstrate enhanced features")
+    run.add_data("complexity", "high")
+    
+    # Nested model calls are automatically tracked
+    with run.client.infer("claude-3", "anthropic") as model_call:
+        model_call.input_token_count = 200
+        model_call.output_token_count = 100
+    
+    # Log within the run context
+    run_logger = logger.with_context(run_id=run.run_id, span_id=run.span_id)
+    run_logger.info("Processing within agent run")
+    
+    run.add_data("result", "success")
+```
+
+**Features**:
+- Automatic span creation
+- Context propagation to child spans
+- Custom data attachment
+- Automatic timing and metrics
+
+**Reference**: `examples/enhanced_usage.py` (section 5)
+
+### Complete Example
+
+See `examples/enhanced_usage.py` for a complete demonstration of all enhanced features working together.
+
+**Key Takeaways**:
+1. **Sampling**: Use for high-volume scenarios to reduce overhead
+2. **Enhanced Schema**: Track detailed performance metrics
+3. **Decorators**: Easy function-level instrumentation
+4. **Logging**: Unified logging and telemetry
+5. **Auto-Instrumentation**: Zero-code tracking for AI libraries
+6. **Batch Operations**: Efficient bulk event processing
+7. **Prometheus**: Production-ready metrics export
+8. **Context Management**: Automatic span and context tracking
 
 ---
 
