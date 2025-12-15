@@ -18,8 +18,8 @@ pip install -e .
 Run demo scenarios to test agent logging and telemetry:
 
 ```bash
-# Run simple agent logging demo
-abidex eval simple
+# Run weather agent logging demo
+abidex eval weather
 
 # Run fraud detection pipeline demo
 abidex eval fraud
@@ -29,7 +29,7 @@ abidex eval fraud --transactions 50
 ```
 
 **Options:**
-- `simple` - Basic agent logging demonstration
+- `weather` - Weather agent logging demonstration
 - `fraud` - Complete fraud detection pipeline with 3 agents
 - `--transactions N` - Number of transactions to process (default: 25, fraud demo only)
 - `--output-dir DIR` - Directory to save log files (default: current directory)
@@ -49,7 +49,7 @@ abidex logs list --pattern "fraud_detection_logs*.jsonl"
 abidex logs summary
 
 # Get summary of specific pattern
-abidex logs summary --pattern "simple_agent_logs*.jsonl"
+abidex logs summary --pattern "weather_agent_logs*.jsonl"
 
 # List all agents found in logs
 abidex logs agents
@@ -114,8 +114,8 @@ abidex logs analyze --notebook fraud
 ### Quick Test
 
 ```bash
-# Run simple demo
-abidex eval simple
+# Run weather demo
+abidex eval weather
 
 # View the logs
 abidex logs list
@@ -124,9 +124,9 @@ abidex logs summary
 
 ## What Gets Generated
 
-### Simple Demo (`eval simple`)
-- Generates: `simple_agent_logs_YYYYMMDD_HHMMSS.jsonl`
-- Shows: Basic agent logging, model calls, metrics, errors
+### Weather Demo (`eval weather`)
+- Generates: `weather_agent_logs_YYYYMMDD_HHMMSS.jsonl`
+- Shows: Weather agent logging, model calls, metrics, errors
 
 ### Fraud Detection Demo (`eval fraud`)
 - Generates: `fraud_detection_logs_YYYYMMDD_HHMMSS.jsonl`
@@ -167,7 +167,7 @@ The `logs analyze` command opens Jupyter notebooks that provide:
 pip install -e .
 
 # Or use Python module syntax
-python -m abidex.cli eval simple
+python -m abidex.cli eval weather
 ```
 
 **Notebook not found:**
