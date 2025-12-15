@@ -13,8 +13,8 @@ abidex logs agents
 # List agents from specific log pattern
 abidex logs agents --pattern "fraud_detection_logs*.jsonl"
 
-# List agents from simple agent logs
-abidex logs agents --pattern "simple_agent_logs*.jsonl"
+# List agents from weather agent logs
+abidex logs agents --pattern "weather_agent_logs*.jsonl"
 ```
 
 **Output includes:**

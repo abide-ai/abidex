@@ -28,10 +28,10 @@ from .sinks import JSONLSink, HTTPSink
 WORKFLOW_REGISTRY = {
     "weather": {
         "display_name": "Weather Agent",
-        "log_pattern": "simple_agent_logs_*.jsonl",
+        "log_pattern": "weather_agent_logs_*.jsonl",
         "notebook": "agent_logs_analysis.ipynb",
-        "script": "simple_agent_test.py",
-        "aliases": ["simple", "simple_agent", "weather_agent"]
+        "script": "weather.py",
+        "aliases": ["weather_agent"]
     },
     "fraud_detection": {
         "display_name": "Fraud Detection",
@@ -473,11 +473,11 @@ def collector_main(args=None):
 def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
     """Run an agent demo."""
     # Get the package directory
-    package_dir = Path(__file__).parent.parent
+    package_dir = Path(__file__).parent
     demo_dir = package_dir
     
-    if demo in ("simple", "weather"):
-        demo_script = demo_dir / "simple_agent_test.py"
+    if demo == "weather":
+        demo_script = demo_dir / "weather.py"
         if not demo_script.exists():
             print(f"Error: Demo script not found at {demo_script}")
             sys.exit(1)
@@ -485,7 +485,7 @@ def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
         print(" Running Weather Agent Logging Demo...")
         print("=" * 50)
         
-        # Run the simple agent test
+        # Run the weather agent demo
         env = os.environ.copy()
         env['PYTHONPATH'] = str(package_dir) + os.pathsep + env.get('PYTHONPATH', '')
         
@@ -821,7 +821,7 @@ def eval_main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
-    parser.add_argument("demo", choices=["simple", "fraud"],
+    parser.add_argument("demo", choices=["weather", "fraud"],
                        help="Which demo to run")
     parser.add_argument("--transactions", type=int, default=25,
                        help="Number of transactions (for fraud demo)")
@@ -874,7 +874,7 @@ Examples:
   abidex notebook fraud_detection
   
   # Run agent demos
-  abidex eval simple
+  abidex eval weather
   abidex eval fraud --transactions 50
 
 For more information, visit: https://github.com/abide-ai/agentkit
@@ -931,8 +931,8 @@ Examples:
   abidex eval fraud --transactions 100 --output-dir ./logs
         """
     )
-    eval_parser.add_argument("demo", choices=["simple", "weather", "fraud"], 
-                            help="Which demo to run: 'weather' (or 'simple') for weather agent logging, 'fraud' for fraud detection pipeline")
+    eval_parser.add_argument("demo", choices=["weather", "fraud"], 
+                            help="Which demo to run: 'weather' for weather agent logging, 'fraud' for fraud detection pipeline")
     eval_parser.add_argument("--transactions", type=int, default=25,
                             help="Number of transactions to process (for fraud demo)")
     eval_parser.add_argument("--output-dir", default=".", help="Directory to save log files")
@@ -965,9 +965,8 @@ Examples:
   # Show map for fraud detection workflow
   abidex map fraud_detection
   
-  # Show map for weather workflow (using alias)
+  # Show map for weather workflow
   abidex map weather
-  abidex map simple_agent  # alias also works
 
 This will show:
   - All agents in the workflow
@@ -976,7 +975,7 @@ This will show:
   - Event counts per agent
         """
     )
-    map_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
+    map_parser.add_argument("workflow", help="Workflow name (e.g., weather, fraud_detection)")
     
     # Logs command (workflow-specific)
     logs_parser = subparsers.add_parser(
@@ -997,7 +996,7 @@ This will show:
   - Total events in each log file
         """
     )
-    logs_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
+    logs_parser.add_argument("workflow", help="Workflow name (e.g., weather, fraud_detection)")
     
     # Notebook command
     notebook_parser = subparsers.add_parser(
@@ -1018,7 +1017,7 @@ This will:
   - Allow you to analyze telemetry data interactively
         """
     )
-    notebook_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
+    notebook_parser.add_argument("workflow", help="Workflow name (e.g., weather, fraud_detection)")
     notebook_parser.add_argument("--port", type=int, default=8888,
                                 help="Port for Jupyter notebook server")
     
