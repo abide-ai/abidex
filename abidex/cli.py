@@ -9,39 +9,11 @@ import subprocess
 from typing import Optional
 from pathlib import Path
 
-try:
-    import uvicorn
-    UVICORN_AVAILABLE = True
-except ImportError:
-    UVICORN_AVAILABLE = False
-
-try:
-    from .collectors import create_collector_app
-    COLLECTOR_AVAILABLE = True
-except ImportError:
-    COLLECTOR_AVAILABLE = False
-
-from .client import TelemetryClient
-from .sinks import JSONLSink, HTTPSink
-
-# Workflow registry - maps workflow names to their resources
-WORKFLOW_REGISTRY = {
-    "weather": {
-        "display_name": "Weather Agent",
-        "log_pattern": "simple_agent_logs_*.jsonl",
-        "notebook": "agent_logs_analysis.ipynb",
-        "script": "simple_agent_test.py",
-        "aliases": ["simple", "simple_agent", "weather_agent"]
-    },
-    "fraud_detection": {
-        "display_name": "Fraud Detection",
-        "log_pattern": "fraud_detection_logs_*.jsonl",
-        "notebook": "fraud_detection_analysis.ipynb",
-        "script": "fraud_detection_pipeline.py",
-        "aliases": ["fraud", "fraud_detection"],
-        "pipeline_name": "FraudDetectionSystem"  # System/pipeline name to filter out from agents
-    }
-}
+# Import functions from dedicated modules
+from .collector_main import collector_main
+from .eval_main import eval_main
+from .cli_common import get_repo_root
+from .workflows.registry import WorkflowRegistry
 
 
 def _extract_workflow_name_from_filename(filename: str) -> Optional[str]:
@@ -316,7 +288,7 @@ def _analyze_workflow_logs(log_files: list) -> dict:
 def discover_workflows() -> dict:
     """Discover workflows from log files and return workflow information.
     
-    Phase 1: Process workflows from WORKFLOW_REGISTRY (existing behavior)
+    Phase 1: Process workflows from WorkflowRegistry (loaded from workflows.json)
     Phase 2: Auto-discover new workflows from log files using filename patterns
     Phase 3: Analyze content to extract metadata and enrich workflow information
     
@@ -327,13 +299,15 @@ def discover_workflows() -> dict:
     from datetime import datetime
     
     workflows = {}
-    package_dir = Path(__file__).parent.parent
+    package_dir = get_repo_root()
     
-    # Phase 1: Process workflows from WORKFLOW_REGISTRY
+    # Phase 1: Process workflows from WorkflowRegistry (loaded from workflows.json)
+    registry = WorkflowRegistry.load_default()
     registry_workflow_ids = set()
-    for workflow_id, config in WORKFLOW_REGISTRY.items():
+    for workflow in registry.list():
+        workflow_id = workflow.id
         registry_workflow_ids.add(workflow_id)
-        log_pattern = config["log_pattern"]
+        log_pattern = workflow.log_pattern
         log_files = glob.glob(log_pattern)
         
         if not log_files:
@@ -343,16 +317,15 @@ def discover_workflows() -> dict:
         stats = _analyze_workflow_logs(log_files)
         
         # Filter out pipeline/system name from agents if specified
-        pipeline_name = config.get("pipeline_name")
-        if pipeline_name and pipeline_name in stats['agents']:
-            del stats['agents'][pipeline_name]
+        if workflow.pipeline_name and workflow.pipeline_name in stats['agents']:
+            del stats['agents'][workflow.pipeline_name]
         
         workflows[workflow_id] = {
-            "display_name": config["display_name"],
+            "display_name": workflow.display_name,
             "log_pattern": log_pattern,
             "log_files": log_files,
-            "notebook": config.get("notebook"),
-            "script": config.get("script"),
+            "notebook": workflow.notebook,
+            "script": workflow.script,
             "total_events": stats['total_events'],
             "agents": stats['agents'],
             "unique_runs": stats['unique_runs'],
@@ -456,21 +429,18 @@ def discover_workflows() -> dict:
 def resolve_workflow_name(name: str) -> Optional[str]:
     """Resolve workflow name or alias to canonical workflow ID.
     
-    Checks both WORKFLOW_REGISTRY and auto-discovered workflows.
+    Checks WorkflowRegistry (from workflows.json) and auto-discovered workflows.
     """
-    name_lower = name.lower()
+    registry = WorkflowRegistry.load_default()
     
-    # Direct match in registry
-    if name_lower in WORKFLOW_REGISTRY:
-        return name_lower
-    
-    # Check aliases in registry
-    for workflow_id, config in WORKFLOW_REGISTRY.items():
-        if name_lower in [a.lower() for a in config.get("aliases", [])]:
-            return workflow_id
+    # Try resolving through registry (handles aliases)
+    workflow = registry.resolve_name(name)
+    if workflow:
+        return workflow.id
     
     # Check auto-discovered workflows
     workflows = discover_workflows()
+    name_lower = name.lower()
     if name_lower in workflows:
         return name_lower
     
@@ -659,10 +629,10 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888):
     if not notebook_file:
         print(f"Error: No notebook found for workflow '{workflow_name}'.")
         print("   Auto-discovered workflows may not have associated notebooks.")
-        print("   You can create one or specify it in WORKFLOW_REGISTRY.")
+        print("   You can create one or add it to workflows.json.")
         return
     
-    package_dir = Path(__file__).parent.parent
+    package_dir = get_repo_root()
     
     # Check notebooks subdirectory first, then root
     notebook_path = package_dir / "notebooks" / notebook_file
@@ -697,177 +667,12 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888):
     sys.exit(result.returncode)
 
 
-def collector_main(args=None):
-    """
-    Main entry point for the collector CLI.
-    
-    Args:
-        args: Parsed arguments (Namespace object). If None, will parse from sys.argv.
-    """
-    if not COLLECTOR_AVAILABLE:
-        print("Error: Collector is not available. Install with: uv add abidex[collector] (or pip install abidex[collector])")
-        sys.exit(1)
-    
-    # If args not provided, parse them (for standalone usage)
-    if args is None:
-        parser = argparse.ArgumentParser(
-            description="Abide AgentKit Telemetry Collector",
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter
-        )
-        
-        parser.add_argument(
-            "--host",
-            default="0.0.0.0",
-            help="Host to bind the collector to"
-        )
-        
-        parser.add_argument(
-            "--port",
-            type=int,
-            default=8000,
-            help="Port to bind the collector to"
-        )
-        
-        parser.add_argument(
-            "--auth-token",
-            help="Authentication token for API requests"
-        )
-        
-        parser.add_argument(
-            "--cors-origins",
-            nargs="*",
-            default=["*"],
-            help="Allowed CORS origins"
-        )
-        
-        parser.add_argument(
-            "--max-batch-size",
-            type=int,
-            default=1000,
-            help="Maximum batch size for event processing"
-        )
-        
-        parser.add_argument(
-            "--output-file",
-            help="Output file for JSONL sink (optional)"
-        )
-        
-        parser.add_argument(
-            "--forward-url",
-            help="HTTP URL to forward events to (optional)"
-        )
-        
-        parser.add_argument(
-            "--log-level",
-            choices=["debug", "info", "warning", "error"],
-            default="info",
-            help="Log level"
-        )
-        
-        parser.add_argument(
-            "--reload",
-            action="store_true",
-            help="Enable auto-reload for development"
-        )
-        
-        args = parser.parse_args()
-    
-    if not UVICORN_AVAILABLE:
-        print("Error: uvicorn is required to run the collector. Install with: uv add abidex[collector] (or pip install abidex[collector])")
-        sys.exit(1)
-    
-    # Set up telemetry client with optional sinks
-    client = TelemetryClient()
-    
-    if args.output_file:
-        client.add_sink(JSONLSink(args.output_file))
-        print(f"Added JSONL sink: {args.output_file}")
-    
-    if args.forward_url:
-        client.add_sink(HTTPSink(args.forward_url))
-        print(f"Added HTTP sink: {args.forward_url}")
-    
-    # Create collector app
-    app = create_collector_app(
-        client=client,
-        auth_token=args.auth_token,
-        cors_origins=args.cors_origins,
-        max_batch_size=args.max_batch_size
-    )
-    
-    print(f"Starting Abide AgentKit Collector on {args.host}:{args.port}")
-    if args.auth_token:
-        print("Authentication enabled")
-    else:
-        print("WARNING: No authentication token set - collector is open to all requests")
-    
-    # Run with uvicorn
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        log_level=args.log_level,
-        reload=args.reload
-    )
-
-
-def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
-    """Run an agent demo."""
-    # Get the package directory
-    package_dir = Path(__file__).parent.parent
-    demo_dir = package_dir
-    
-    if demo in ("simple", "weather"):
-        demo_script = demo_dir / "simple_agent_test.py"
-        if not demo_script.exists():
-            print(f"Error: Demo script not found at {demo_script}")
-            sys.exit(1)
-        
-        print(" Running Weather Agent Logging Demo...")
-        print("=" * 50)
-        
-        # Run the simple agent test
-        env = os.environ.copy()
-        env['PYTHONPATH'] = str(package_dir) + os.pathsep + env.get('PYTHONPATH', '')
-        
-        result = subprocess.run(
-            [sys.executable, str(demo_script)],
-            cwd=str(demo_dir),
-            env=env
-        )
-        
-        sys.exit(result.returncode)
-    
-    elif demo == "fraud":
-        demo_script = demo_dir / "fraud_detection_pipeline.py"
-        if not demo_script.exists():
-            print(f"Error: Demo script not found at {demo_script}")
-            sys.exit(1)
-        
-        print(" Running Fraud Detection Pipeline Demo...")
-        print("=" * 50)
-        print(f"Processing {transactions} transactions...")
-        
-        # Run the fraud detection pipeline
-        env = os.environ.copy()
-        env['PYTHONPATH'] = str(package_dir) + os.pathsep + env.get('PYTHONPATH', '')
-        
-        # Pass transaction count as environment variable
-        env['FRAUD_DEMO_TRANSACTIONS'] = str(transactions)
-        
-        result = subprocess.run(
-            [sys.executable, str(demo_script)],
-            cwd=str(demo_dir),
-            env=env
-        )
-        
-        sys.exit(result.returncode)
 
 
 def run_logs_command(command: str, pattern: str = "*_logs*.jsonl", 
                      notebook: str = "agent", port: int = 8888):
     """Run logs analysis commands."""
-    package_dir = Path(__file__).parent.parent
+    package_dir = get_repo_root()
     
     if command == "list":
         import glob
@@ -1155,23 +960,6 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
         sys.exit(result.returncode)
 
 
-def eval_main():
-    """Standalone entry point for eval command."""
-    parser = argparse.ArgumentParser(
-        description="Abide AgentKit Evaluation - Run agent demos and tests",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    
-    parser.add_argument("demo", choices=["simple", "fraud"],
-                       help="Which demo to run")
-    parser.add_argument("--transactions", type=int, default=25,
-                       help="Number of transactions (for fraud demo)")
-    parser.add_argument("--output-dir", default=".", help="Output directory")
-    
-    args = parser.parse_args()
-    run_eval_demo(args.demo, args.transactions, args.output_dir)
-
-
 def logs_main():
     """Standalone entry point for logs command."""
     parser = argparse.ArgumentParser(
@@ -1374,8 +1162,8 @@ This will:
         # Pass the parsed args to collector_main
         collector_main(args)
     elif args.main_command == "eval":
-        # Pass the parsed args
-        run_eval_demo(args.demo, args.transactions, args.output_dir)
+        # Pass the parsed args to eval_main
+        eval_main(args)
     elif args.main_command == "workflows":
         list_workflows()
     elif args.main_command == "map":
