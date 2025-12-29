@@ -30,47 +30,83 @@ abidex eval fraud --transactions 50
 
 **Options:**
 - `simple` - Basic agent logging demonstration
+- `weather` - Weather agent logging demo (alias of `simple`)
 - `fraud` - Complete fraud detection pipeline with 3 agents
 - `--transactions N` - Number of transactions to process (default: 25, fraud demo only)
 - `--output-dir DIR` - Directory to save log files (default: current directory)
 
-### `abidex logs` - Analyze Telemetry Logs
+### `abidex workflows` - List Discovered Workflows
+
+List workflows discovered from log files (based on `workflows.json` patterns):
+
+```bash
+abidex workflows
+```
+
+### `abidex map` - Show Workflow Map
+
+Display agents and their latest calls for a workflow:
+
+```bash
+abidex map fraud_detection
+abidex map weather
+```
+
+### `abidex logs` - Show Workflow Log Files
+
+Show log files for a workflow (uses the `log_pattern` in `workflows.json`):
+
+```bash
+abidex logs fraud_detection
+abidex logs weather
+```
+
+### `abidex notebook` - Open Workflow Notebook
+
+Open the analysis notebook for a workflow:
+
+```bash
+abidex notebook fraud_detection
+abidex notebook weather --port 9999
+```
+
+### `abidex-logs` - Analyze Telemetry Logs
 
 Analyze and visualize telemetry data from agent runs:
 
 ```bash
 # List all log files
-abidex logs list
+abidex-logs list
 
 # List fraud detection logs
-abidex logs list --pattern "fraud_detection_logs*.jsonl"
+abidex-logs list --pattern "fraud_detection_logs*.jsonl"
 
 # Get quick summary of logs
-abidex logs summary
+abidex-logs summary
 
 # Get summary of specific pattern
-abidex logs summary --pattern "simple_agent_logs*.jsonl"
+abidex-logs summary --pattern "simple_agent_logs*.jsonl"
 
 # List all agents found in logs
-abidex logs agents
+abidex-logs agents
 
 # List all agents from fraud detection logs
-abidex logs agents --pattern "fraud_detection_logs*.jsonl"
+abidex-logs agents --pattern "fraud_detection_logs*.jsonl"
 
 # List all pipelines found in logs
-abidex logs pipelines
+abidex-logs pipelines
 
 # List pipelines from specific pattern
-abidex logs pipelines --pattern "*agent_logs*.jsonl"
+abidex-logs pipelines --pattern "*_logs*.jsonl"
 
 # Open Jupyter notebook for analysis
-abidex logs analyze
+abidex-logs analyze
 
 # Open fraud detection analysis notebook
-abidex logs analyze --notebook fraud
+abidex-logs analyze --notebook fraud
 
 # Open notebook on custom port
-abidex logs analyze --port 9999
+abidex-logs analyze --port 9999
 ```
 
 **Subcommands:**
@@ -81,7 +117,7 @@ abidex logs analyze --port 9999
 - `analyze` - Opens Jupyter notebook for interactive analysis
 
 **Options:**
-- `--pattern PATTERN` - Glob pattern to match log files (default: `*agent_logs*.jsonl`)
+- `--pattern PATTERN` - Glob pattern to match log files (default: `*_logs*.jsonl`)
 - `--notebook {agent,fraud}` - Which notebook to open (default: `agent`)
 - `--port PORT` - Port for Jupyter notebook server (default: 8888)
 
@@ -101,14 +137,17 @@ abidex collector --port 8000
 # 1. Run the fraud detection demo
 abidex eval fraud --transactions 30
 
-# 2. Check what logs were generated
-abidex logs list
+# 2. List discovered workflows
+abidex workflows
 
-# 3. Get a quick summary
-abidex logs summary --pattern "fraud_detection_logs*.jsonl"
+# 3. Inspect workflow log files
+abidex logs fraud_detection
 
-# 4. Open the analysis notebook
-abidex logs analyze --notebook fraud
+# 4. Get a quick summary of logs
+abidex-logs summary --pattern "fraud_detection_logs*.jsonl"
+
+# 5. Open the analysis notebook
+abidex notebook fraud_detection
 ```
 
 ### Quick Test
@@ -117,14 +156,16 @@ abidex logs analyze --notebook fraud
 # Run simple demo
 abidex eval simple
 
-# View the logs
-abidex logs list
-abidex logs summary
+# View the workflow logs
+abidex logs weather
+
+# Summarize logs
+abidex-logs summary --pattern "simple_agent_logs*.jsonl"
 ```
 
 ## What Gets Generated
 
-### Simple Demo (`eval simple`)
+### Simple Demo (`eval simple` or `eval weather`)
 - Generates: `simple_agent_logs_YYYYMMDD_HHMMSS.jsonl`
 - Shows: Basic agent logging, model calls, metrics, errors
 
@@ -138,7 +179,7 @@ abidex logs summary
 
 ## Analysis Notebooks
 
-The `logs analyze` command opens Jupyter notebooks that provide:
+The `abidex-logs analyze` and `abidex notebook` commands open Jupyter notebooks that provide:
 
 - **Agent Logs Analysis** (`--notebook agent`):
   - General agent telemetry analysis
@@ -166,7 +207,7 @@ The `logs analyze` command opens Jupyter notebooks that provide:
 # Make sure package is installed
 pip install -e .
 
-# Or use Python module syntax
+# Or use Python module syntax for the main CLI
 python -m abidex.cli eval simple
 ```
 
