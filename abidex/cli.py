@@ -3,22 +3,325 @@ Command-line interface for Abide AgentKit.
 """
 
 import argparse
-import subprocess
 import sys
+import os
+import subprocess
+from typing import Optional
 from pathlib import Path
 
-from .collector_main import collector_main
-from .eval_main import eval_main, run_eval_demo
-from .workflows import (
-    list_workflows,
-    open_workflow_notebook,
-    show_workflow_logs,
-    show_workflow_map,
-)
+try:
+    import uvicorn
+    UVICORN_AVAILABLE = True
+except ImportError:
+    UVICORN_AVAILABLE = False
+
+try:
+    from .collectors import create_collector_app
+    COLLECTOR_AVAILABLE = True
+except ImportError:
+    COLLECTOR_AVAILABLE = False
+
+from .client import TelemetryClient
+from .sinks import JSONLSink, HTTPSink
+
+# Workflow registry - maps workflow names to their resources
+WORKFLOW_REGISTRY = {
+    "weather": {
+        "display_name": "Weather Agent",
+        "log_pattern": "simple_agent_logs_*.jsonl",
+        "notebook": "agent_logs_analysis.ipynb",
+        "script": "simple_agent_test.py",
+        "aliases": ["simple", "simple_agent", "weather_agent"]
+    },
+    "fraud_detection": {
+        "display_name": "Fraud Detection",
+        "log_pattern": "fraud_detection_logs_*.jsonl",
+        "notebook": "fraud_detection_analysis.ipynb",
+        "script": "fraud_detection_pipeline.py",
+        "aliases": ["fraud", "fraud_detection"],
+        "pipeline_name": "FraudDetectionSystem"  # System/pipeline name to filter out from agents
+    }
+}
 
 
-def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
-    """Discover workflows from log files and return workflow information."""
+def _extract_workflow_name_from_filename(filename: str) -> Optional[str]:
+    """Extract workflow name from filename pattern.
+    
+    Patterns:
+    - {workflow}_logs_*.jsonl → {workflow}
+    - {workflow}_telemetry_*.jsonl → {workflow}
+    - agent_logs_*.jsonl → agent
+    """
+    import re
+    
+    # Pattern: {workflow}_logs_*.jsonl
+    match = re.match(r'^(.+?)_logs_.*\.jsonl$', filename)
+    if match:
+        workflow = match.group(1)
+        if workflow != 'agent':  # Don't return 'agent' for generic pattern
+            return workflow
+    
+    # Pattern: {workflow}_telemetry_*.jsonl
+    match = re.match(r'^(.+?)_telemetry_.*\.jsonl$', filename)
+    if match:
+        return match.group(1)
+    
+    # Pattern: agent_logs_*.jsonl → 'agent'
+    if filename.startswith('agent_logs_') and filename.endswith('.jsonl'):
+        return 'agent'
+    
+    return None
+
+
+def _analyze_log_file_content(file_path: str, max_sample_lines: int = 100) -> dict:
+    """Analyze log file content to extract workflow metadata.
+    
+    Returns dict with:
+    - workflow_name: From metadata.workflow_name, tags.workflow, metadata.pipeline
+    - display_name: From metadata.workflow_display_name or inferred
+    - agents: Set of unique agent names
+    - sample_events: Number of events sampled
+    """
+    import json
+    
+    result = {
+        'workflow_name': None,
+        'display_name': None,
+        'agents': set(),
+        'sample_events': 0,
+        'metadata_sources': {}
+    }
+    
+    try:
+        with open(file_path, 'r') as f:
+            lines_read = 0
+            for line in f:
+                if lines_read >= max_sample_lines:
+                    break
+                    
+                if not line.strip():
+                    continue
+                
+                try:
+                    event = json.loads(line.strip())
+                    result['sample_events'] += 1
+                    lines_read += 1
+                    
+                    # Extract workflow name from various sources
+                    metadata = event.get('metadata', {})
+                    tags = event.get('tags', {})
+                    
+                    # Check multiple sources for workflow name
+                    workflow_name = (
+                        metadata.get('workflow_name') or
+                        metadata.get('workflow') or
+                        metadata.get('pipeline') or
+                        tags.get('workflow') or
+                        tags.get('pipeline')
+                    )
+                    
+                    if workflow_name and not result['workflow_name']:
+                        result['workflow_name'] = workflow_name
+                        result['metadata_sources']['workflow_name'] = 'metadata' if metadata.get('workflow_name') else 'tags'
+                    
+                    # Extract display name
+                    display_name = metadata.get('workflow_display_name') or metadata.get('display_name')
+                    if display_name and not result['display_name']:
+                        result['display_name'] = display_name
+                    
+                    # Extract agents
+                    agent_name = tags.get('agent') or event.get('agent', {}).get('name')
+                    if agent_name:
+                        result['agents'].add(agent_name)
+                        
+                except (json.JSONDecodeError, KeyError):
+                    continue
+    except Exception:
+        pass
+    
+    # Convert agents set to list for JSON serialization
+    result['agents'] = list(result['agents'])
+    
+    return result
+
+
+def _find_matching_script(workflow_name: str, search_dir: Path) -> Optional[str]:
+    """Find matching Python script for workflow.
+    
+    Looks for:
+    - {workflow_name}.py
+    - {workflow_name}_pipeline.py
+    - {workflow_name}_test.py
+    """
+    patterns = [
+        f"{workflow_name}.py",
+        f"{workflow_name}_pipeline.py",
+        f"{workflow_name}_test.py",
+        f"{workflow_name}_agent.py"
+    ]
+    
+    import glob
+    for pattern in patterns:
+        matches = glob.glob(str(search_dir / pattern))
+        if matches:
+            return Path(matches[0]).name
+    
+    return None
+
+
+def _find_matching_notebook(workflow_name: str, search_dir: Path) -> Optional[str]:
+    """Find matching Jupyter notebook for workflow.
+    
+    Looks for:
+    - {workflow_name}_analysis.ipynb
+    - {workflow_name}.ipynb
+    """
+    import glob
+    
+    patterns = [
+        f"{workflow_name}_analysis.ipynb",
+        f"{workflow_name}.ipynb"
+    ]
+    
+    # Also check notebooks subdirectory
+    search_paths = [search_dir, search_dir / "notebooks"]
+    
+    for search_path in search_paths:
+        for pattern in patterns:
+            matches = glob.glob(str(search_path / pattern))
+            if matches:
+                return Path(matches[0]).name
+    
+    return None
+
+
+def _infer_display_name(workflow_name: str, agents: list) -> str:
+    """Infer display name from workflow name and agents.
+    
+    Examples:
+    - fraud_detection → Fraud Detection
+    - weather_agent → Weather Agent
+    - customer_service → Customer Service
+    """
+    import re
+    
+    # If we have agents, try to infer from agent names
+    if agents:
+        # Use first agent name as hint
+        first_agent = agents[0] if agents else ""
+        # Remove common suffixes
+        agent_base = re.sub(r'(_agent|Agent|_handler|Handler)$', '', first_agent, flags=re.IGNORECASE)
+        if agent_base and agent_base != workflow_name:
+            # Capitalize and format
+            return ' '.join(word.capitalize() for word in agent_base.replace('_', ' ').split())
+    
+    # Convert workflow_name to display name
+    # fraud_detection → Fraud Detection
+    display = ' '.join(word.capitalize() for word in workflow_name.replace('_', ' ').split())
+    return display
+
+
+def _analyze_workflow_logs(log_files: list) -> dict:
+    """Analyze log files to extract workflow statistics.
+    
+    Returns dict with: total_events, agents, unique_runs, last_seen
+    """
+    import json
+    
+    total_events = 0
+    agents = {}
+    last_seen = None
+    runs = set()
+    
+    for file_path in log_files:
+        try:
+            with open(file_path, 'r') as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            event = json.loads(line.strip())
+                            total_events += 1
+                            
+                            # Track agents
+                            tags = event.get('tags', {})
+                            agent_info = event.get('agent', {})
+                            
+                            agent_name = tags.get('agent')
+                            if not agent_name:
+                                agent_name = agent_info.get('name')
+                            
+                            agent_role = tags.get('role') or agent_info.get('role')
+                            
+                            if agent_name:
+                                if agent_name not in agents:
+                                    agents[agent_name] = {
+                                        'events': 0,
+                                        'role': agent_role,
+                                        'last_call': None,
+                                        'last_call_time': None
+                                    }
+                                agents[agent_name]['events'] += 1
+                                
+                                if agent_role and not agents[agent_name]['role']:
+                                    agents[agent_name]['role'] = agent_role
+                                
+                                # Track last call
+                                call_name = None
+                                metadata = event.get('metadata', {})
+                                action = event.get('action', {})
+                                
+                                if tags.get('event_type') == 'action':
+                                    call_name = metadata.get('action')
+                                elif tags.get('event_type') == 'decision':
+                                    call_name = metadata.get('decision')
+                                elif action:
+                                    call_name = action.get('name')
+                                
+                                if not call_name:
+                                    call_name = metadata.get('action') or metadata.get('agent_action')
+                                
+                                if call_name:
+                                    telemetry = event.get('telemetry', {})
+                                    timestamp = telemetry.get('timestamp_start')
+                                    if timestamp:
+                                        if (agents[agent_name]['last_call_time'] is None or 
+                                            timestamp > agents[agent_name]['last_call_time']):
+                                            agents[agent_name]['last_call'] = call_name
+                                            agents[agent_name]['last_call_time'] = timestamp
+                                
+                                # Track timestamp
+                                telemetry = event.get('telemetry', {})
+                                timestamp = telemetry.get('timestamp_start')
+                                if timestamp:
+                                    if last_seen is None or timestamp > last_seen:
+                                        last_seen = timestamp
+                            
+                            # Track runs
+                            run_id = event.get('run_id')
+                            if run_id:
+                                runs.add(run_id)
+                        except (json.JSONDecodeError, KeyError):
+                            pass
+        except Exception:
+            pass
+    
+    return {
+        'total_events': total_events,
+        'agents': agents,
+        'unique_runs': len(runs),
+        'last_seen': last_seen
+    }
+
+
+def discover_workflows() -> dict:
+    """Discover workflows from log files and return workflow information.
+    
+    Phase 1: Process workflows from WORKFLOW_REGISTRY (existing behavior)
+    Phase 2: Auto-discover new workflows from log files using filename patterns
+    Phase 3: Analyze content to extract metadata and enrich workflow information
+    
+    Returns dict mapping workflow_id to workflow information.
+    """
     import glob
     import json
     from datetime import datetime
@@ -26,10 +329,10 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
     workflows = {}
     package_dir = Path(__file__).parent.parent
     
-    # Check all log files
-    all_log_files = glob.glob("*_logs*.jsonl")
-    
+    # Phase 1: Process workflows from WORKFLOW_REGISTRY
+    registry_workflow_ids = set()
     for workflow_id, config in WORKFLOW_REGISTRY.items():
+        registry_workflow_ids.add(workflow_id)
         log_pattern = config["log_pattern"]
         log_files = glob.glob(log_pattern)
         
@@ -37,122 +340,145 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
             continue
         
         # Analyze log files to get workflow stats
-        total_events = 0
-        agents = {}
-        agent_last_calls = {}
-        last_seen = None
-        runs = set()
-        
-        for file_path in log_files:
-            try:
-                with open(file_path, 'r') as f:
-                    for line in f:
-                        if line.strip():
-                            try:
-                                event = json.loads(line.strip())
-                                total_events += 1
-                                
-                                # Track agents - prioritize tags['agent'] (set by AgentLogger) over agent.name
-                                tags = event.get('tags', {})
-                                agent_info = event.get('agent', {})
-                                
-                                # AgentLogger sets agent name in tags, prioritize that
-                                agent_name = tags.get('agent')
-                                if not agent_name:
-                                    # Fall back to agent.name if tags don't have it
-                                    agent_name = agent_info.get('name')
-                                
-                                # Also get role from tags or agent field
-                                agent_role = tags.get('role') or agent_info.get('role')
-                                
-                                if agent_name:
-                                    if agent_name not in agents:
-                                        agents[agent_name] = {
-                                            'events': 0,
-                                            'role': agent_role,
-                                            'last_call': None,
-                                            'last_call_time': None
-                                        }
-                                    agents[agent_name]['events'] += 1
-                                    # Update role if we found one
-                                    if agent_role and not agents[agent_name]['role']:
-                                        agents[agent_name]['role'] = agent_role
-                                    
-                                    # Track last call - check multiple sources
-                                    call_name = None
-                                    metadata = event.get('metadata', {})
-                                    action = event.get('action', {})
-                                    
-                                    # For AgentLogger events, action is in metadata
-                                    if tags.get('event_type') == 'action':
-                                        # AgentLogger stores action in metadata.action
-                                        call_name = metadata.get('action')
-                                    elif tags.get('event_type') == 'decision':
-                                        call_name = metadata.get('decision')
-                                    # For regular events, check action.name
-                                    elif action:
-                                        call_name = action.get('name')
-                                    # Fallback to metadata
-                                    if not call_name:
-                                        call_name = metadata.get('action') or metadata.get('agent_action')
-                                    
-                                    if call_name:
-                                        telemetry = event.get('telemetry', {})
-                                        timestamp = telemetry.get('timestamp_start')
-                                        if timestamp:
-                                            if (agents[agent_name]['last_call_time'] is None or 
-                                                timestamp > agents[agent_name]['last_call_time']):
-                                                agents[agent_name]['last_call'] = call_name
-                                                agents[agent_name]['last_call_time'] = timestamp
-                                    
-                                    # Track timestamp
-                                    telemetry = event.get('telemetry', {})
-                                    timestamp = telemetry.get('timestamp_start')
-                                    if timestamp:
-                                        if last_seen is None or timestamp > last_seen:
-                                            last_seen = timestamp
-                                
-                                # Track runs
-                                run_id = event.get('run_id')
-                                if run_id:
-                                    runs.add(run_id)
-                            except (json.JSONDecodeError, KeyError):
-                                pass
-            except Exception:
-                pass
+        stats = _analyze_workflow_logs(log_files)
         
         # Filter out pipeline/system name from agents if specified
         pipeline_name = config.get("pipeline_name")
-        if pipeline_name and pipeline_name in agents:
-            del agents[pipeline_name]
+        if pipeline_name and pipeline_name in stats['agents']:
+            del stats['agents'][pipeline_name]
         
         workflows[workflow_id] = {
             "display_name": config["display_name"],
             "log_pattern": log_pattern,
             "log_files": log_files,
-            "notebook": config["notebook"],
-            "script": config["script"],
-            "total_events": total_events,
-            "agents": agents,
-            "unique_runs": len(runs),
-            "last_seen": last_seen
+            "notebook": config.get("notebook"),
+            "script": config.get("script"),
+            "total_events": stats['total_events'],
+            "agents": stats['agents'],
+            "unique_runs": stats['unique_runs'],
+            "last_seen": stats['last_seen'],
+            "source": "registry"  # Mark as from registry
+        }
+    
+    # Phase 2: Auto-discover workflows from log files
+    # Scan for log files using patterns
+    log_patterns = [
+        "*_logs_*.jsonl",
+        "*_telemetry_*.jsonl",
+        "agent_logs_*.jsonl"
+    ]
+    
+    discovered_files = {}
+    for pattern in log_patterns:
+        files = glob.glob(pattern)
+        for file_path in files:
+            filename = Path(file_path).name
+            workflow_name = _extract_workflow_name_from_filename(filename)
+            
+            if workflow_name:
+                # Normalize workflow name (use underscore, lowercase)
+                workflow_id = workflow_name.lower().replace('-', '_')
+                
+                # Skip if already in registry
+                if workflow_id in registry_workflow_ids:
+                    continue
+                
+                # Group files by workflow
+                if workflow_id not in discovered_files:
+                    discovered_files[workflow_id] = []
+                discovered_files[workflow_id].append(file_path)
+    
+    # Phase 3: Analyze content and enrich workflow information
+    for workflow_id, log_files in discovered_files.items():
+        # Analyze first file to get metadata
+        first_file = log_files[0]
+        content_analysis = _analyze_log_file_content(first_file)
+        
+        # Determine workflow name (prefer from content, fallback to filename)
+        workflow_name = content_analysis.get('workflow_name') or workflow_id
+        
+        # Determine display name
+        display_name = content_analysis.get('display_name')
+        if not display_name:
+            # Infer from workflow name and agents
+            agents_list = list(content_analysis.get('agents', []))
+            display_name = _infer_display_name(workflow_name, agents_list)
+        
+        # Infer log pattern from discovered files
+        # Use the pattern that matches all files
+        if len(log_files) == 1:
+            filename = Path(log_files[0]).name
+            # Extract pattern: fraud_detection_logs_*.jsonl
+            import re
+            match = re.match(r'^(.+?)_(logs|telemetry)_.*\.jsonl$', filename)
+            if match:
+                log_pattern = f"{match.group(1)}_{match.group(2)}_*.jsonl"
+            else:
+                log_pattern = f"{workflow_id}_logs_*.jsonl"
+        else:
+            # Multiple files, use common prefix
+            log_pattern = f"{workflow_id}_logs_*.jsonl"
+        
+        # Find matching script and notebook
+        script = _find_matching_script(workflow_name, package_dir)
+        notebook = _find_matching_notebook(workflow_name, package_dir)
+        
+        # Analyze all log files for statistics
+        stats = _analyze_workflow_logs(log_files)
+        
+        # Merge agents from content analysis with stats
+        content_agents = content_analysis.get('agents', [])
+        for agent_name in content_agents:
+            if agent_name not in stats['agents']:
+                stats['agents'][agent_name] = {
+                    'events': 0,
+                    'role': None,
+                    'last_call': None,
+                    'last_call_time': None
+                }
+        
+        workflows[workflow_id] = {
+            "display_name": display_name,
+            "log_pattern": log_pattern,
+            "log_files": log_files,
+            "notebook": notebook,
+            "script": script,
+            "total_events": stats['total_events'],
+            "agents": stats['agents'],
+            "unique_runs": stats['unique_runs'],
+            "last_seen": stats['last_seen'],
+            "source": "auto_discovered"  # Mark as auto-discovered
         }
     
     return workflows
 
 
 def resolve_workflow_name(name: str) -> Optional[str]:
-    """Resolve workflow name or alias to canonical workflow ID."""
+    """Resolve workflow name or alias to canonical workflow ID.
+    
+    Checks both WORKFLOW_REGISTRY and auto-discovered workflows.
+    """
     name_lower = name.lower()
     
-    # Direct match
+    # Direct match in registry
     if name_lower in WORKFLOW_REGISTRY:
         return name_lower
     
-    # Check aliases
+    # Check aliases in registry
     for workflow_id, config in WORKFLOW_REGISTRY.items():
         if name_lower in [a.lower() for a in config.get("aliases", [])]:
             return workflow_id
+    
+    # Check auto-discovered workflows
+    workflows = discover_workflows()
+    if name_lower in workflows:
+        return name_lower
+    
+    # Try fuzzy match (for auto-discovered workflows)
+    # e.g., "fraud-detection" matches "fraud_detection"
+    normalized_name = name_lower.replace('-', '_')
+    if normalized_name in workflows:
+        return normalized_name
     
     return None
 
@@ -235,27 +561,42 @@ def show_workflow_logs(workflow_name: str):
     workflow_id = resolve_workflow_name(workflow_name)
     
     if not workflow_id:
+        # Try direct match (for auto-discovered workflows)
+        workflows = discover_workflows()
+        if workflow_name.lower() in workflows:
+            workflow_id = workflow_name.lower()
+        else:
+            print(f"Error: Workflow '{workflow_name}' not found.")
+            print("\nAvailable workflows:")
+            for wf_id, info in workflows.items():
+                print(f"  - {info['display_name']} ({wf_id})")
+            return
+    
+    # Get workflow info from discovered workflows
+    workflows = discover_workflows()
+    
+    if workflow_id not in workflows:
         print(f"Error: Workflow '{workflow_name}' not found.")
+        print("\nAvailable workflows:")
+        for wf_id, info in workflows.items():
+            print(f"  - {info['display_name']} ({wf_id})")
         return
     
-    if workflow_id not in WORKFLOW_REGISTRY:
-        print(f"Error: Workflow '{workflow_name}' not in registry.")
-        return
-    
-    config = WORKFLOW_REGISTRY[workflow_id]
-    log_pattern = config["log_pattern"]
-    
-    import glob
-    log_files = glob.glob(log_pattern)
+    workflow_info = workflows[workflow_id]
+    log_files = workflow_info.get("log_files", [])
+    log_pattern = workflow_info.get("log_pattern", "")
+    display_name = workflow_info.get("display_name", workflow_id)
     
     if not log_files:
         print(f"No log files found for workflow '{workflow_name}'.")
-        print(f"Pattern: {log_pattern}")
+        if log_pattern:
+            print(f"Pattern: {log_pattern}")
         return
     
-    print(f"\nTelemetry Logs for {config['display_name']}")
+    print(f"\nTelemetry Logs for {display_name}")
     print("=" * 60)
-    print(f"Log Pattern: {log_pattern}")
+    if log_pattern:
+        print(f"Log Pattern: {log_pattern}")
     print(f"Found {len(log_files)} log file(s):\n")
     
     import json
@@ -290,24 +631,51 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888):
     workflow_id = resolve_workflow_name(workflow_name)
     
     if not workflow_id:
+        # Try direct match (for auto-discovered workflows)
+        workflows = discover_workflows()
+        if workflow_name.lower() in workflows:
+            workflow_id = workflow_name.lower()
+        else:
+            print(f"Error: Workflow '{workflow_name}' not found.")
+            print("\nAvailable workflows:")
+            for wf_id, info in workflows.items():
+                print(f"  - {info['display_name']} ({wf_id})")
+            return
+    
+    # Get workflow info from discovered workflows
+    workflows = discover_workflows()
+    
+    if workflow_id not in workflows:
         print(f"Error: Workflow '{workflow_name}' not found.")
+        print("\nAvailable workflows:")
+        for wf_id, info in workflows.items():
+            print(f"  - {info['display_name']} ({wf_id})")
         return
     
-    if workflow_id not in WORKFLOW_REGISTRY:
-        print(f"Error: Workflow '{workflow_name}' not in registry.")
+    workflow_info = workflows[workflow_id]
+    notebook_file = workflow_info.get("notebook")
+    display_name = workflow_info.get("display_name", workflow_id)
+    
+    if not notebook_file:
+        print(f"Error: No notebook found for workflow '{workflow_name}'.")
+        print("   Auto-discovered workflows may not have associated notebooks.")
+        print("   You can create one or specify it in WORKFLOW_REGISTRY.")
         return
     
-    config = WORKFLOW_REGISTRY[workflow_id]
-    notebook_file = config["notebook"]
     package_dir = Path(__file__).parent.parent
-    notebook_path = package_dir / notebook_file
+    
+    # Check notebooks subdirectory first, then root
+    notebook_path = package_dir / "notebooks" / notebook_file
+    if not notebook_path.exists():
+        notebook_path = package_dir / notebook_file
     
     if not notebook_path.exists():
         print(f"Error: Notebook not found at {notebook_path}")
-        print(f"   Make sure you've run the workflow first.")
+        print(f"   Expected notebook: {notebook_file}")
+        print(f"   Make sure the notebook exists in the project directory.")
         sys.exit(1)
     
-    print(f"Opening {config['display_name']} Analysis Notebook...")
+    print(f"Opening {display_name} Analysis Notebook...")
     print(f"   Notebook: {notebook_path}")
     print(f"   Port: {port}")
     print("\nThe Jupyter notebook will open in your browser.")
@@ -497,42 +865,41 @@ def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
 
 
 def run_logs_command(command: str, pattern: str = "*_logs*.jsonl", 
->>>>>>> c2a6e2d (resolved #1)
                      notebook: str = "agent", port: int = 8888):
     """Run logs analysis commands."""
     package_dir = Path(__file__).parent.parent
-
+    
     if command == "list":
         import glob
-
+        
         log_files = glob.glob(pattern)
         if not log_files:
             print(f" No log files found matching pattern: {pattern}")
             return
-
+        
         print(f" Found {len(log_files)} log file(s):")
         for file in sorted(log_files):
             file_path = Path(file)
             size = file_path.stat().st_size if file_path.exists() else 0
             size_mb = size / (1024 * 1024)
             print(f"  • {file} ({size_mb:.2f} MB)")
-
+    
     elif command == "summary":
         import glob
         import json
-
+        
         log_files = glob.glob(pattern)
         if not log_files:
             print(f" No log files found matching pattern: {pattern}")
             return
-
+        
         print(f" Summary for {len(log_files)} log file(s):")
         print("=" * 50)
-
+        
         total_events = 0
         event_types = {}
         agents = {}
-
+        
         for file_path in log_files:
             with open(file_path, 'r') as f:
                 file_events = 0
@@ -542,53 +909,53 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
                             event = json.loads(line.strip())
                             file_events += 1
                             total_events += 1
-
+                            
                             # Count event types
                             event_type = event.get('event_type', 'unknown')
                             event_types[event_type] = event_types.get(event_type, 0) + 1
-
+                            
                             # Count agents
                             agent_name = event.get('agent', {}).get('name', 'unknown')
                             if agent_name:
                                 agents[agent_name] = agents.get(agent_name, 0) + 1
                         except json.JSONDecodeError:
                             pass
-
+            
             print(f"\n {file_path}:")
             print(f"  • Events: {file_events:,}")
-
+        
         print(f"\n Overall Summary:")
         print(f"  • Total Events: {total_events:,}")
         print(f"  • Event Types: {len(event_types)}")
         print(f"  • Unique Agents: {len(agents)}")
-
+        
         if event_types:
-            print("\n Event Type Distribution:")
+            print(f"\n Event Type Distribution:")
             for event_type, count in sorted(event_types.items(), key=lambda x: x[1], reverse=True):
                 percentage = (count / total_events) * 100
                 print(f"  • {event_type}: {count:,} ({percentage:.1f}%)")
-
+        
         if agents:
-            print("\n Agent Distribution:")
+            print(f"\n Agent Distribution:")
             for agent, count in sorted(agents.items(), key=lambda x: x[1], reverse=True):
                 percentage = (count / total_events) * 100
                 print(f"  • {agent}: {count:,} ({percentage:.1f}%)")
-
+    
     elif command == "agents":
         import glob
         import json
-
+        
         log_files = glob.glob(pattern)
         if not log_files:
             print(f" No log files found matching pattern: {pattern}")
             return
-
+        
         print(f" Agents found in {len(log_files)} log file(s):")
         print("=" * 60)
-
+        
         agents = {}
         agent_details = {}
-
+        
         for file_path in log_files:
             with open(file_path, 'r') as f:
                 for line in f:
@@ -597,7 +964,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
                             event = json.loads(line.strip())
                             agent_info = event.get('agent', {})
                             agent_name = agent_info.get('name')
-
+                            
                             if agent_name:
                                 if agent_name not in agents:
                                     agents[agent_name] = 0
@@ -609,37 +976,35 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
                                         'first_seen': None,
                                         'last_seen': None
                                     }
-
+                                
                                 agents[agent_name] += 1
                                 agent_details[agent_name]['events'] += 1
-
+                                
                                 # Track runs
                                 run_id = event.get('run_id')
                                 if run_id:
                                     agent_details[agent_name]['runs'].add(run_id)
-
+                                
                                 # Track timestamps
                                 telemetry = event.get('telemetry', {})
                                 timestamp = telemetry.get('timestamp_start')
                                 if timestamp:
-                                    if (agent_details[agent_name]['first_seen'] is None or
-                                        timestamp < agent_details[agent_name]['first_seen']):
+                                    if agent_details[agent_name]['first_seen'] is None or timestamp < agent_details[agent_name]['first_seen']:
                                         agent_details[agent_name]['first_seen'] = timestamp
-                                    if (agent_details[agent_name]['last_seen'] is None or
-                                        timestamp > agent_details[agent_name]['last_seen']):
+                                    if agent_details[agent_name]['last_seen'] is None or timestamp > agent_details[agent_name]['last_seen']:
                                         agent_details[agent_name]['last_seen'] = timestamp
                         except (json.JSONDecodeError, KeyError):
                             pass
-
+        
         if not agents:
             print("No agents found in log files.")
             return
-
+        
         # Sort by event count
         sorted_agents = sorted(agents.items(), key=lambda x: x[1], reverse=True)
-
+        
         print(f"\n Found {len(agents)} unique agent(s):\n")
-
+        
         for agent_name, event_count in sorted_agents:
             details = agent_details[agent_name]
             print(f" {agent_name}")
@@ -649,42 +1014,42 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
                 print(f"   Version: {details['version']}")
             print(f"   Total Events: {event_count:,}")
             print(f"   Unique Runs: {len(details['runs'])}")
-
+            
             if details['first_seen'] and details['last_seen']:
                 from datetime import datetime
                 first = datetime.fromtimestamp(details['first_seen']).strftime('%Y-%m-%d %H:%M:%S')
                 last = datetime.fromtimestamp(details['last_seen']).strftime('%Y-%m-%d %H:%M:%S')
                 print(f"   First Seen: {first}")
                 print(f"   Last Seen: {last}")
-
+            
             print()
-
+    
     elif command == "pipelines":
         import glob
         import json
-
+        
         log_files = glob.glob(pattern)
         if not log_files:
             print(f" No log files found matching pattern: {pattern}")
             return
-
+        
         print(f" Pipelines found in {len(log_files)} log file(s):")
         print("=" * 60)
-
+        
         pipelines = {}
         pipeline_details = {}
-
+        
         for file_path in log_files:
             with open(file_path, 'r') as f:
                 for line in f:
                     if line.strip():
                         try:
                             event = json.loads(line.strip())
-
+                            
                             # Look for pipeline identifiers
                             metadata = event.get('metadata', {})
                             tags = event.get('tags', {})
-
+                            
                             # Check various places for pipeline info
                             pipeline_id = (
                                 metadata.get('pipeline_id') or
@@ -692,7 +1057,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
                                 tags.get('pipeline') or
                                 metadata.get('system')
                             )
-
+                            
                             if pipeline_id:
                                 if pipeline_id not in pipelines:
                                     pipelines[pipeline_id] = 0
@@ -703,59 +1068,57 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
                                         'first_seen': None,
                                         'last_seen': None
                                     }
-
+                                
                                 pipelines[pipeline_id] += 1
                                 pipeline_details[pipeline_id]['events'] += 1
-
+                                
                                 # Track runs
                                 run_id = event.get('run_id')
                                 if run_id:
                                     pipeline_details[pipeline_id]['runs'].add(run_id)
-
+                                
                                 # Track agents
                                 agent_name = event.get('agent', {}).get('name')
                                 if agent_name:
                                     pipeline_details[pipeline_id]['agents'].add(agent_name)
-
+                                
                                 # Track timestamps
                                 telemetry = event.get('telemetry', {})
                                 timestamp = telemetry.get('timestamp_start')
                                 if timestamp:
-                                    if (pipeline_details[pipeline_id]['first_seen'] is None or
-                                        timestamp < pipeline_details[pipeline_id]['first_seen']):
+                                    if pipeline_details[pipeline_id]['first_seen'] is None or timestamp < pipeline_details[pipeline_id]['first_seen']:
                                         pipeline_details[pipeline_id]['first_seen'] = timestamp
-                                    if (pipeline_details[pipeline_id]['last_seen'] is None or
-                                        timestamp > pipeline_details[pipeline_id]['last_seen']):
+                                    if pipeline_details[pipeline_id]['last_seen'] is None or timestamp > pipeline_details[pipeline_id]['last_seen']:
                                         pipeline_details[pipeline_id]['last_seen'] = timestamp
                         except (json.JSONDecodeError, KeyError):
                             pass
-
+        
         if not pipelines:
             print("No pipelines found in log files.")
             print("\n Tip: Pipelines are identified by 'pipeline_id', 'pipeline', or 'system' in metadata/tags")
             return
-
+        
         # Sort by event count
         sorted_pipelines = sorted(pipelines.items(), key=lambda x: x[1], reverse=True)
-
+        
         print(f"\n Found {len(pipelines)} unique pipeline(s):\n")
-
+        
         for pipeline_id, event_count in sorted_pipelines:
             details = pipeline_details[pipeline_id]
             print(f" {pipeline_id}")
             print(f"   Total Events: {event_count:,}")
             print(f"   Unique Runs: {len(details['runs'])}")
             print(f"   Agents: {', '.join(sorted(details['agents'])) if details['agents'] else 'N/A'}")
-
+            
             if details['first_seen'] and details['last_seen']:
                 from datetime import datetime
                 first = datetime.fromtimestamp(details['first_seen']).strftime('%Y-%m-%d %H:%M:%S')
                 last = datetime.fromtimestamp(details['last_seen']).strftime('%Y-%m-%d %H:%M:%S')
                 print(f"   First Seen: {first}")
                 print(f"   Last Seen: {last}")
-
+            
             print()
-
+    
     elif command == "analyze":
         # Determine which notebook to open
         if notebook == "fraud":
@@ -764,32 +1127,49 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
         else:
             notebook_file = package_dir / "agent_logs_analysis.ipynb"
             notebook_name = "Agent Logs Analysis"
-
+        
         if not notebook_file.exists():
             print(f" Error: Notebook not found at {notebook_file}")
-            print("   Make sure you've run a demo first to generate log files.")
+            print(f"   Make sure you've run a demo first to generate log files.")
             sys.exit(1)
-
+        
         print(f" Opening {notebook_name}...")
         print(f"   Notebook: {notebook_file}")
         print(f"   Port: {port}")
         print("\n The Jupyter notebook will open in your browser.")
         print("   Press Ctrl+C to stop the server.\n")
-
+        
         # Check if jupyter is available
         try:
             import jupyter
         except ImportError:
             print(" Error: Jupyter is required. Install with: pip install jupyter")
             sys.exit(1)
-
+        
         # Launch Jupyter notebook
         result = subprocess.run(
             ["jupyter", "notebook", str(notebook_file), "--port", str(port)],
             cwd=str(package_dir)
         )
-
+        
         sys.exit(result.returncode)
+
+
+def eval_main():
+    """Standalone entry point for eval command."""
+    parser = argparse.ArgumentParser(
+        description="Abide AgentKit Evaluation - Run agent demos and tests",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
+    parser.add_argument("demo", choices=["simple", "fraud"],
+                       help="Which demo to run")
+    parser.add_argument("--transactions", type=int, default=25,
+                       help="Number of transactions (for fraud demo)")
+    parser.add_argument("--output-dir", default=".", help="Output directory")
+    
+    args = parser.parse_args()
+    run_eval_demo(args.demo, args.transactions, args.output_dir)
 
 
 def logs_main():
@@ -798,7 +1178,7 @@ def logs_main():
         description="Abide AgentKit Logs - Analyze telemetry data",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
+    
     parser.add_argument("command", choices=["analyze", "list", "summary", "agents", "pipelines"],
                        help="Command to run")
     parser.add_argument("--pattern", default="*_logs*.jsonl",
@@ -807,7 +1187,7 @@ def logs_main():
                        help="Which notebook to open")
     parser.add_argument("--port", type=int, default=8888,
                        help="Port for Jupyter notebook")
-
+    
     args = parser.parse_args()
     run_logs_command(args.command, args.pattern, args.notebook, args.port)
 
@@ -821,19 +1201,19 @@ def main():
 Examples:
   # Start the telemetry collector
   abidex collector --port 8000
-
+  
   # List all available workflows
   abidex workflows
-
+  
   # Show workflow map with agents and their last calls
   abidex map fraud_detection
-
+  
   # View logs for a workflow
   abidex logs weather
-
+  
   # Open Jupyter notebook for a workflow
   abidex notebook fraud_detection
-
+  
   # Run agent demos
   abidex eval simple
   abidex eval fraud --transactions 50
@@ -841,9 +1221,9 @@ Examples:
 For more information, visit: https://github.com/abide-ai/agentkit
         """
     )
-
+    
     subparsers = parser.add_subparsers(dest="main_command", help="Available commands", metavar="COMMAND")
-
+    
     # Collector command
     collector_parser = subparsers.add_parser(
         "collector",
@@ -853,13 +1233,13 @@ For more information, visit: https://github.com/abide-ai/agentkit
 Examples:
   # Start collector on default port 8000
   abidex collector
-
+  
   # Start on custom port with authentication
   abidex collector --port 9000 --auth-token my-secret-token
-
+  
   # Start with JSONL output file
   abidex collector --output-file telemetry.jsonl
-
+  
   # Start with CORS enabled for specific origins
   abidex collector --cors-origins http://localhost:3000 https://app.example.com
         """
@@ -874,7 +1254,7 @@ Examples:
     collector_parser.add_argument("--forward-url", help="HTTP URL to forward events to")
     collector_parser.add_argument("--log-level", choices=["debug", "info", "warning", "error"], default="info")
     collector_parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
-
+    
     # Eval command
     eval_parser = subparsers.add_parser(
         "eval",
@@ -884,20 +1264,20 @@ Examples:
 Examples:
   # Run weather agent demo
   abidex eval weather
-
+  
   # Run fraud detection demo with 50 transactions
   abidex eval fraud --transactions 50
-
+  
   # Run fraud detection and save to custom directory
   abidex eval fraud --transactions 100 --output-dir ./logs
         """
     )
-    eval_parser.add_argument("demo", choices=["simple", "weather", "fraud"],
+    eval_parser.add_argument("demo", choices=["simple", "weather", "fraud"], 
                             help="Which demo to run: 'weather' (or 'simple') for weather agent logging, 'fraud' for fraud detection pipeline")
     eval_parser.add_argument("--transactions", type=int, default=25,
                             help="Number of transactions to process (for fraud demo)")
     eval_parser.add_argument("--output-dir", default=".", help="Directory to save log files")
-
+    
     # Workflows command
     workflows_parser = subparsers.add_parser(
         "workflows",
@@ -907,7 +1287,7 @@ Examples:
 Examples:
   # List all workflows
   abidex workflows
-
+  
 This will show:
   - Workflow names and display names
   - Number of agents in each workflow
@@ -915,7 +1295,7 @@ This will show:
   - Last seen timestamp
         """
     )
-
+    
     # Map command
     map_parser = subparsers.add_parser(
         "map",
@@ -925,7 +1305,7 @@ This will show:
 Examples:
   # Show map for fraud detection workflow
   abidex map fraud_detection
-
+  
   # Show map for weather workflow (using alias)
   abidex map weather
   abidex map simple_agent  # alias also works
@@ -938,7 +1318,7 @@ This will show:
         """
     )
     map_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
-
+    
     # Logs command (workflow-specific)
     logs_parser = subparsers.add_parser(
         "logs",
@@ -948,7 +1328,7 @@ This will show:
 Examples:
   # Show logs for fraud detection workflow
   abidex logs fraud_detection
-
+  
   # Show logs for weather workflow
   abidex logs weather
 
@@ -959,7 +1339,7 @@ This will show:
         """
     )
     logs_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
-
+    
     # Notebook command
     notebook_parser = subparsers.add_parser(
         "notebook",
@@ -969,7 +1349,7 @@ This will show:
 Examples:
   # Open notebook for fraud detection workflow
   abidex notebook fraud_detection
-
+  
   # Open notebook on custom port
   abidex notebook weather --port 9999
 
@@ -982,13 +1362,13 @@ This will:
     notebook_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
     notebook_parser.add_argument("--port", type=int, default=8888,
                                 help="Port for Jupyter notebook server")
-
+    
     args = parser.parse_args()
-
+    
     if not args.main_command:
         parser.print_help()
         sys.exit(1)
-
+    
     # Call the appropriate function with parsed args
     if args.main_command == "collector":
         # Pass the parsed args to collector_main
