@@ -8,11 +8,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .cli_common import get_repo_root
+
 
 def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
     """Run an agent demo."""
     # Get the package directory
-    package_dir = Path(__file__).parent.parent
+    package_dir = get_repo_root()
     demo_dir = package_dir
 
     if demo in ("simple", "weather"):
@@ -66,18 +68,26 @@ def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
         sys.exit(1)
 
 
-def eval_main():
-    """Standalone entry point for eval command."""
-    parser = argparse.ArgumentParser(
-        description="Abide AgentKit Evaluation - Run agent demos and tests",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
+def eval_main(args=None):
+    """
+    Main entry point for the eval CLI.
+    
+    Args:
+        args: Parsed arguments (Namespace object). If None, will parse from sys.argv.
+    """
+    # If args not provided, parse them (for standalone usage)
+    if args is None:
+        parser = argparse.ArgumentParser(
+            description="Abide AgentKit Evaluation - Run agent demos and tests",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
 
-    parser.add_argument("demo", choices=["simple", "fraud"],
-                       help="Which demo to run")
-    parser.add_argument("--transactions", type=int, default=25,
-                       help="Number of transactions (for fraud demo)")
-    parser.add_argument("--output-dir", default=".", help="Output directory")
+        parser.add_argument("demo", choices=["simple", "weather", "fraud"],
+                           help="Which demo to run")
+        parser.add_argument("--transactions", type=int, default=25,
+                           help="Number of transactions (for fraud demo)")
+        parser.add_argument("--output-dir", default=".", help="Output directory")
 
-    args = parser.parse_args()
+        args = parser.parse_args()
+    
     run_eval_demo(args.demo, args.transactions, args.output_dir)

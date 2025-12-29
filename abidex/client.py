@@ -15,17 +15,11 @@ from dataclasses import dataclass, asdict, field, is_dataclass
 from uuid import uuid4
 from contextlib import contextmanager
 
-# OpenTelemetry imports
+# OpenTelemetry imports (re-exported for compatibility)
 from opentelemetry import trace, metrics
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-from opentelemetry.sdk.resources import Resource
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
 from opentelemetry.metrics import Meter, Counter, Histogram
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 
 class EventType(str, Enum):
@@ -327,12 +321,16 @@ class TelemetrySink(Protocol):
         ...
 
 
-class TelemetryClient:
+# Import base TelemetryClient from otel_client (handles circular import)
+from .otel_client import TelemetryClient as BaseTelemetryClient
+
+
+class TelemetryClient(BaseTelemetryClient):
     """
-    OpenTelemetry-based telemetry client.
+    OpenTelemetry-based telemetry client with sink support.
     
-    This client uses OpenTelemetry for distributed tracing, metrics, and logging.
-    It maintains compatibility with the existing API while using OpenTelemetry as the backend.
+    This extends the base TelemetryClient from otel_client.py with additional
+    functionality for sinks, event handling, and backward compatibility.
     """
     
     def __init__(
@@ -347,114 +345,22 @@ class TelemetryClient:
         service_name: Optional[str] = None,
         service_version: Optional[str] = None
     ):
-        self.agent_id = agent_id or str(uuid4())
+        # Initialize base class with OpenTelemetry setup
+        super().__init__(
+            agent_id=agent_id,
+            service_name=service_name,
+            service_version=service_version,
+            otlp_endpoint=otlp_endpoint,
+            otlp_headers=otlp_headers,
+            sample_rate=sample_rate,
+            metadata=metadata,
+            default_tags=default_tags,
+            enabled=True
+        )
+        
+        # Additional initialization for sinks and compatibility
         self.sinks = sinks or []  # Keep for backward compatibility
-        self.default_tags = default_tags or {}
-        self.sample_rate = float(sample_rate)
-        self.metadata = metadata or {}
-        self._enabled = True
-        
-        # Set up OpenTelemetry resource
-        service_name = service_name or agent_id or "abidex_service"
-        service_version = service_version or "0.1.0"
-        
-        resource_attributes = {
-            "service.name": service_name,
-            "service.version": service_version,
-            "agent.id": self.agent_id,
-            **self.metadata
-        }
-        resource = Resource.create(resource_attributes)
-        
-        # Initialize TracerProvider
-        self.tracer_provider = TracerProvider(resource=resource)
-        
-        # Set up span exporters
-        # Use SimpleSpanProcessor for console (no background threads) to avoid hanging
-        # Use BatchSpanProcessor for OTLP (better performance with batching)
-        if otlp_endpoint:
-            span_exporter = OTLPSpanExporter(
-                endpoint=otlp_endpoint + "/v1/traces",
-                headers=otlp_headers or {}
-            )
-            # Store reference to span processor for proper shutdown
-            self.span_processor = BatchSpanProcessor(span_exporter)
-        else:
-            span_exporter = ConsoleSpanExporter()
-            # Use SimpleSpanProcessor for console to avoid background threads
-            self.span_processor = SimpleSpanProcessor(span_exporter)
-        
-        self.tracer_provider.add_span_processor(self.span_processor)
-        
-        # Set as global tracer provider
-        trace.set_tracer_provider(self.tracer_provider)
-        
-        # Get tracer
-        self.tracer: Tracer = trace.get_tracer(
-            instrumenting_module_name="abidex",
-            instrumenting_library_version=service_version
-        )
-        
-        # Set up metric exporters
-        # For console mode, don't use PeriodicExportingMetricReader to avoid background threads
-        # Metrics can still be recorded but won't be exported (prevents hanging)
-        metric_readers = []
-        if otlp_endpoint:
-            metric_exporter = OTLPMetricExporter(
-                endpoint=otlp_endpoint + "/v1/metrics",
-                headers=otlp_headers or {}
-            )
-            metric_reader = PeriodicExportingMetricReader(metric_exporter)
-            metric_readers.append(metric_reader)
-            # Store reference to metric reader for proper shutdown
-            self.metric_reader = metric_reader
-        else:
-            # For console mode, don't export metrics (no background threads = no hanging)
-            # Metrics can still be recorded but won't be exported
-            self.metric_reader = None
-        
-        # Initialize MeterProvider with metric readers
-        self.meter_provider = MeterProvider(
-            resource=resource,
-            metric_readers=metric_readers
-        )
-        
-        # Set as global meter provider
-        metrics.set_meter_provider(self.meter_provider)
-        
-        # Get meter
-        self.meter: Meter = metrics.get_meter(
-            name="abidex",
-            version=service_version
-        )
-        
-        # Create common metrics
-        self._create_otel_metrics()
-    
-    def _create_otel_metrics(self):
-        """Create OpenTelemetry metrics."""
-        self.agent_runs_counter: Counter = self.meter.create_counter(
-            name="abidex.agent.runs",
-            description="Total number of agent runs"
-        )
-        self.model_calls_counter: Counter = self.meter.create_counter(
-            name="abidex.model.calls",
-            description="Total number of model calls"
-        )
-        self.model_tokens_counter: Counter = self.meter.create_counter(
-            name="abidex.model.tokens",
-            description="Total tokens used in model calls",
-            unit="token"
-        )
-        self.model_latency_histogram: Histogram = self.meter.create_histogram(
-            name="abidex.model.latency",
-            description="Model call latency",
-            unit="ms"
-        )
-        self.errors_counter: Counter = self.meter.create_counter(
-            name="abidex.errors",
-            description="Total number of errors"
-        )
+        self._enabled = True  # Override enabled from base class
     
     def add_sink(self, sink: TelemetrySink) -> None:
         """Add a telemetry sink (kept for backward compatibility)."""
@@ -478,47 +384,7 @@ class TelemetryClient:
         import random
         return random.random() < self.sample_rate
     
-    def start_span(
-        self,
-        name: str,
-        kind: trace.SpanKind = trace.SpanKind.INTERNAL,
-        attributes: Optional[Dict[str, Any]] = None,
-        links: Optional[list] = None,
-        start_time: Optional[int] = None
-    ) -> Span:
-        """Start a new OpenTelemetry span."""
-        if not self._enabled:
-            return trace.NoOpSpan()
-        
-        span_attributes = {**self.default_tags, **(attributes or {})}
-        return self.tracer.start_span(
-            name=name,
-            kind=kind,
-            attributes=span_attributes,
-            links=links,
-            start_time=start_time
-        )
-    
-    @contextmanager
-    def span(
-        self,
-        name: str,
-        kind: trace.SpanKind = trace.SpanKind.INTERNAL,
-        attributes: Optional[Dict[str, Any]] = None,
-        set_status_on_exception: bool = True
-    ):
-        """Context manager for creating an OpenTelemetry span."""
-        span = self.start_span(name, kind, attributes)
-        try:
-            with trace.use_span(span):
-                yield span
-        except Exception as e:
-            if set_status_on_exception:
-                span.set_status(Status(StatusCode.ERROR, str(e)))
-                span.record_exception(e)
-            raise
-        finally:
-            span.end()
+    # start_span and span methods are inherited from BaseTelemetryClient
     
     def new_event(
         self,
@@ -767,6 +633,7 @@ class TelemetryClient:
     
     def close(self) -> None:
         """Close all sinks and shutdown OpenTelemetry providers."""
+        # Close all sinks first
         for sink in self.sinks:
             try:
                 sink.close()
@@ -774,44 +641,8 @@ class TelemetryClient:
                 print(f"Warning: Failed to close sink {sink}: {e}")
         self.sinks.clear()
         
-        # Flush span processor before shutdown to ensure all spans are exported
-        # SimpleSpanProcessor doesn't have force_flush (it's synchronous)
-        if hasattr(self, 'span_processor') and self.span_processor:
-            try:
-                # Only flush if it's a BatchSpanProcessor
-                if isinstance(self.span_processor, BatchSpanProcessor):
-                    self.span_processor.force_flush(timeout_millis=2000)
-            except Exception as e:
-                print(f"Warning: Failed to flush span processor: {e}")
-        
-        # Shutdown metric reader first if it exists (only for OTLP mode)
-        if hasattr(self, 'metric_reader') and self.metric_reader:
-            try:
-                shutdown_done = threading.Event()
-                def shutdown_metric_reader():
-                    try:
-                        self.metric_reader.shutdown()
-                    finally:
-                        shutdown_done.set()
-                
-                thread = threading.Thread(target=shutdown_metric_reader, daemon=True)
-                thread.start()
-                shutdown_done.wait(timeout=1.0)  # 1 second timeout
-            except Exception as e:
-                print(f"Warning: Failed to shutdown metric reader: {e}")
-        
-        # Shutdown OpenTelemetry providers
-        # SimpleSpanProcessor doesn't have background threads, so shutdown should be quick
-        if self.tracer_provider:
-            try:
-                self.tracer_provider.shutdown()
-            except Exception as e:
-                print(f"Warning: Failed to shutdown tracer provider: {e}")
-        if self.meter_provider:
-            try:
-                self.meter_provider.shutdown()
-            except Exception as e:
-                print(f"Warning: Failed to shutdown meter provider: {e}")
+        # Shutdown OpenTelemetry providers (handled by base class)
+        self.shutdown()
     
     @contextmanager
     def infer(
