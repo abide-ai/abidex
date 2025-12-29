@@ -87,6 +87,7 @@ Issues = "https://github.com/abide-ai/agentkit/issues"
 [project.scripts]
 abidex = "abidex.cli:main"
 abidex-collector = "abidex.cli:collector_main"
+abidex-logs = "abidex.cli:logs_main"
 
 [tool.setuptools.packages.find]
 include = ["abidex*"]
