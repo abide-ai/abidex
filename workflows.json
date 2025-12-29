@@ -1,0 +1,21 @@
+{
+  "workflows": [
+    {
+      "id": "weather",
+      "display_name": "Weather Agent",
+      "log_pattern": "simple_agent_logs_*.jsonl",
+      "notebook": "agent_logs_analysis.ipynb",
+      "script": "simple_agent_test.py",
+      "aliases": ["simple", "simple_agent", "weather_agent"]
+    },
+    {
+      "id": "fraud_detection",
+      "display_name": "Fraud Detection",
+      "log_pattern": "fraud_detection_logs_*.jsonl",
+      "notebook": "fraud_detection_analysis.ipynb",
+      "script": "fraud_detection_pipeline.py",
+      "aliases": ["fraud", "fraud_detection"],
+      "pipeline_name": "FraudDetectionSystem"
+    }
+  ]
+}

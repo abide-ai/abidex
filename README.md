@@ -101,6 +101,31 @@ uv pip install "abidex[all]"
 
 **Note**: The HTTP collector dependencies (FastAPI, uvicorn) are now included by default, so the collector command works out of the box.
 
+## CLI
+
+Use the CLI to run demos, explore workflows, and analyze logs:
+
+```bash
+# Run demos
+abidex eval simple
+abidex eval weather
+abidex eval fraud --transactions 50
+
+# Discover workflows and inspect logs
+abidex workflows
+abidex map fraud_detection
+abidex logs fraud_detection
+abidex notebook fraud_detection
+
+# Analyze logs across files
+abidex-logs list
+abidex-logs summary --pattern "fraud_detection_logs*.jsonl"
+abidex-logs analyze --notebook fraud
+
+# Start collector
+abidex collector --port 8000
+```
+
 ## Quick Start
 
 ### Using OpenTelemetry Directly
@@ -340,7 +365,7 @@ uvicorn.run(app, host="0.0.0.0", port=8000)
 Or use the CLI:
 
 ```bash
-abide-collector --port 8000 --auth-token your-secret-token
+abidex collector --port 8000 --auth-token your-secret-token
 ```
 
 ### Data Privacy and Redaction
