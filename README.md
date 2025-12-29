@@ -12,7 +12,6 @@ uv add abidex
 pip install abidex
 ```
 
-<<<<<<< HEAD
 ### With Optional Dependencies
 
 ```bash
@@ -80,7 +79,16 @@ with AgentRun("my_task", client=client) as run:
 
 ## Documentation
 
-<<<<<<< HEAD
+- **[Technical Documentation](documentation/draft.md)**: Complete guide including:
+  - CLI workflow & command execution
+  - CLI usage guide
+  - Querying agents and pipelines
+  - Architecture & design decisions
+  - Integration examples
+- **[Examples](examples/)**: Usage examples
+
+### Usage Examples
+
 ```python
 # Decorator-based instrumentation
 @client.record(model="gpt-4", backend="openai")
@@ -324,8 +332,6 @@ See the `/examples` directory for complete usage examples:
 - `crew_integration.py`: CrewAI workflow tracking
 - `http_collector.py`: Running a telemetry collector
 - `custom_sinks.py`: Creating custom sinks
-
-## Documentation
 
 - **[Technical Documentation](documentation/draft.md)**: Complete guide including:
   - CLI workflow & command execution
