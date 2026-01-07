@@ -9,7 +9,6 @@ import subprocess
 from typing import Optional
 from pathlib import Path
 
-<<<<<<< HEAD
 try:
     import uvicorn
     UVICORN_AVAILABLE = True
@@ -25,33 +24,13 @@ except ImportError:
 from .client import TelemetryClient
 from .sinks import JSONLSink, HTTPSink
 
-# Workflow registry - maps workflow names to their resources
-WORKFLOW_REGISTRY = {
-    "weather": {
-        "display_name": "Weather Agent",
-        "log_pattern": "weather_agent_logs_*.jsonl",
-        "notebook": "agent_logs_analysis.ipynb",
-        "script": "weather.py",
-        "aliases": ["weather_agent"]
-    },
-    "fraud_detection": {
-        "display_name": "Fraud Detection",
-        "log_pattern": "fraud_detection_logs_*.jsonl",
-        "notebook": "fraud_detection_analysis.ipynb",
-        "script": "fraud_detection_pipeline.py",
-        "aliases": ["fraud", "fraud_detection"],
-        "pipeline_name": "FraudDetectionSystem"  # System/pipeline name to filter out from agents
-    }
-}
-=======
 # Import functions from dedicated modules
 from .collector_main import collector_main
 from .eval_main import eval_main
 from .cli_common import get_repo_root
+from .log_patterns import find_log_files, format_log_patterns, resolve_log_patterns
 from .workflows.registry import WorkflowRegistry
 from .workflows.discovery import discover_workflows, resolve_workflow_name
->>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
-
 
 
 
@@ -156,19 +135,22 @@ def show_workflow_logs(workflow_name: str):
     
     workflow_info = workflows[workflow_id]
     log_files = workflow_info.get("log_files", [])
+    log_patterns = workflow_info.get("log_patterns") or []
     log_pattern = workflow_info.get("log_pattern", "")
     display_name = workflow_info.get("display_name", workflow_id)
+    formatted_patterns = format_log_patterns(log_patterns) or log_pattern
     
     if not log_files:
         print(f"No log files found for workflow '{workflow_name}'.")
-        if log_pattern:
-            print(f"Pattern: {log_pattern}")
+        if formatted_patterns:
+            print(f"Patterns: {formatted_patterns}")
         return
     
     print(f"\nTelemetry Logs for {display_name}")
     print("=" * 60)
-    if log_pattern:
-        print(f"Log Pattern: {log_pattern}")
+    if formatted_patterns:
+        label = "Log Pattern" if len(log_patterns) <= 1 else "Log Patterns"
+        print(f"{label}: {formatted_patterns}")
     print(f"Found {len(log_files)} log file(s):\n")
     
     import json
@@ -269,7 +251,7 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888):
     sys.exit(result.returncode)
 
 
-<<<<<<< HEAD
+
 def collector_main(args=None):
     """
     Main entry point for the collector CLI.
@@ -435,23 +417,28 @@ def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
         )
         
         sys.exit(result.returncode)
-=======
->>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
 
 
-def run_logs_command(command: str, pattern: str = "*_logs*.jsonl", 
+def run_logs_command(command: str, patterns=None,
                      notebook: str = "agent", port: int = 8888):
     """Run logs analysis commands."""
     package_dir = get_repo_root()
+
+    log_files = []
+    resolved_patterns = []
+
+    if command in ("list", "summary", "agents", "pipelines"):
+        resolved_patterns = resolve_log_patterns(patterns, search_dir=Path.cwd())
+        log_files = find_log_files(resolved_patterns)
+        if not log_files:
+            formatted = format_log_patterns(resolved_patterns)
+            if formatted:
+                print(f" No log files found matching patterns: {formatted}")
+            else:
+                print(" No log files found.")
+            return
     
     if command == "list":
-        import glob
-        
-        log_files = glob.glob(pattern)
-        if not log_files:
-            print(f" No log files found matching pattern: {pattern}")
-            return
-        
         print(f" Found {len(log_files)} log file(s):")
         for file in sorted(log_files):
             file_path = Path(file)
@@ -460,13 +447,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
             print(f"  • {file} ({size_mb:.2f} MB)")
     
     elif command == "summary":
-        import glob
         import json
-        
-        log_files = glob.glob(pattern)
-        if not log_files:
-            print(f" No log files found matching pattern: {pattern}")
-            return
         
         print(f" Summary for {len(log_files)} log file(s):")
         print("=" * 50)
@@ -517,13 +498,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
                 print(f"  • {agent}: {count:,} ({percentage:.1f}%)")
     
     elif command == "agents":
-        import glob
         import json
-        
-        log_files = glob.glob(pattern)
-        if not log_files:
-            print(f" No log files found matching pattern: {pattern}")
-            return
         
         print(f" Agents found in {len(log_files)} log file(s):")
         print("=" * 60)
@@ -600,13 +575,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
             print()
     
     elif command == "pipelines":
-        import glob
         import json
-        
-        log_files = glob.glob(pattern)
-        if not log_files:
-            print(f" No log files found matching pattern: {pattern}")
-            return
         
         print(f" Pipelines found in {len(log_files)} log file(s):")
         print("=" * 60)
@@ -730,7 +699,6 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
         sys.exit(result.returncode)
 
 
-<<<<<<< HEAD
 def eval_main():
     """Standalone entry point for eval command."""
     parser = argparse.ArgumentParser(
@@ -747,9 +715,6 @@ def eval_main():
     args = parser.parse_args()
     run_eval_demo(args.demo, args.transactions, args.output_dir)
 
-
-=======
->>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
 def logs_main():
     """Standalone entry point for logs command."""
     parser = argparse.ArgumentParser(
@@ -759,8 +724,11 @@ def logs_main():
     
     parser.add_argument("command", choices=["analyze", "list", "summary", "agents", "pipelines"],
                        help="Command to run")
-    parser.add_argument("--pattern", default="*_logs*.jsonl",
-                       help="Pattern to match log files")
+    parser.add_argument(
+        "--pattern",
+        action="append",
+        help="Log file pattern(s). Can be repeated or comma-separated."
+    )
     parser.add_argument("--notebook", choices=["agent", "fraud"], default="agent",
                        help="Which notebook to open")
     parser.add_argument("--port", type=int, default=8888,

@@ -14,6 +14,7 @@ import glob
 
 from .registry import WorkflowRegistry
 from ..cli_common import get_repo_root
+from ..log_patterns import find_log_files, format_log_patterns, resolve_log_patterns
 
 
 def _extract_workflow_name_from_filename(filename: str) -> Optional[str]:
@@ -297,8 +298,8 @@ def discover_workflows(registry: Optional[WorkflowRegistry] = None) -> Dict[str,
     for workflow in registry.list():
         workflow_id = workflow.id
         registry_workflow_ids.add(workflow_id)
-        log_pattern = workflow.log_pattern
-        log_files = glob.glob(log_pattern)
+        log_patterns = workflow.log_patterns
+        log_files = find_log_files(log_patterns)
         
         if not log_files:
             continue
@@ -312,7 +313,8 @@ def discover_workflows(registry: Optional[WorkflowRegistry] = None) -> Dict[str,
         
         workflows[workflow_id] = {
             "display_name": workflow.display_name,
-            "log_pattern": log_pattern,
+            "log_pattern": format_log_patterns(log_patterns),
+            "log_patterns": list(log_patterns),
             "log_files": log_files,
             "notebook": workflow.notebook,
             "script": workflow.script,
@@ -325,31 +327,24 @@ def discover_workflows(registry: Optional[WorkflowRegistry] = None) -> Dict[str,
     
     # Phase 2: Auto-discover workflows from log files
     # Scan for log files using patterns
-    log_patterns = [
-        "*_logs_*.jsonl",
-        "*_telemetry_*.jsonl",
-        "agent_logs_*.jsonl"
-    ]
-    
     discovered_files = {}
-    for pattern in log_patterns:
-        files = glob.glob(pattern)
-        for file_path in files:
-            filename = Path(file_path).name
-            workflow_name = _extract_workflow_name_from_filename(filename)
+    auto_patterns = resolve_log_patterns(search_dir=Path.cwd())
+    for file_path in find_log_files(auto_patterns):
+        filename = Path(file_path).name
+        workflow_name = _extract_workflow_name_from_filename(filename)
+        
+        if workflow_name:
+            # Normalize workflow name (use underscore, lowercase)
+            workflow_id = workflow_name.lower().replace('-', '_')
             
-            if workflow_name:
-                # Normalize workflow name (use underscore, lowercase)
-                workflow_id = workflow_name.lower().replace('-', '_')
-                
-                # Skip if already in registry
-                if workflow_id in registry_workflow_ids:
-                    continue
-                
-                # Group files by workflow
-                if workflow_id not in discovered_files:
-                    discovered_files[workflow_id] = []
-                discovered_files[workflow_id].append(file_path)
+            # Skip if already in registry
+            if workflow_id in registry_workflow_ids:
+                continue
+            
+            # Group files by workflow
+            if workflow_id not in discovered_files:
+                discovered_files[workflow_id] = []
+            discovered_files[workflow_id].append(file_path)
     
     # Phase 3: Analyze content and enrich workflow information
     for workflow_id, log_files in discovered_files.items():
@@ -402,6 +397,7 @@ def discover_workflows(registry: Optional[WorkflowRegistry] = None) -> Dict[str,
         workflows[workflow_id] = {
             "display_name": display_name,
             "log_pattern": log_pattern,
+            "log_patterns": [log_pattern],
             "log_files": log_files,
             "notebook": notebook,
             "script": script,

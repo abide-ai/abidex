@@ -3,9 +3,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import glob
-
 from ..cli_common import get_repo_root
+from ..log_patterns import find_log_files, format_log_patterns
 from .discovery import discover_workflows
 from .registry import WorkflowRegistry
 
@@ -99,17 +98,21 @@ def show_workflow_logs(workflow_name: str, registry: WorkflowRegistry = None):
         print(f"Error: Workflow '{workflow_name}' not found.")
         return
 
-    log_pattern = workflow.log_pattern
-    log_files = glob.glob(log_pattern)
+    log_patterns = workflow.log_patterns
+    log_files = find_log_files(log_patterns)
 
     if not log_files:
         print(f"No log files found for workflow '{workflow_name}'.")
-        print(f"Pattern: {log_pattern}")
+        formatted = format_log_patterns(log_patterns)
+        if formatted:
+            print(f"Patterns: {formatted}")
         return
 
     print(f"\nTelemetry Logs for {workflow.display_name}")
     print("=" * 60)
-    print(f"Log Pattern: {log_pattern}")
+    formatted = format_log_patterns(log_patterns)
+    if formatted:
+        print(f"Log Patterns: {formatted}")
     print(f"Found {len(log_files)} log file(s):\n")
 
     import json
