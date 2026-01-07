@@ -9,6 +9,7 @@ import subprocess
 from typing import Optional
 from pathlib import Path
 
+<<<<<<< HEAD
 try:
     import uvicorn
     UVICORN_AVAILABLE = True
@@ -42,146 +43,16 @@ WORKFLOW_REGISTRY = {
         "pipeline_name": "FraudDetectionSystem"  # System/pipeline name to filter out from agents
     }
 }
+=======
+# Import functions from dedicated modules
+from .collector_main import collector_main
+from .eval_main import eval_main
+from .cli_common import get_repo_root
+from .workflows.registry import WorkflowRegistry
+from .workflows.discovery import discover_workflows, resolve_workflow_name
+>>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
 
 
-def discover_workflows() -> dict:
-    """Discover workflows from log files and return workflow information."""
-    import glob
-    import json
-    from datetime import datetime
-    
-    workflows = {}
-    package_dir = Path(__file__).parent.parent
-    
-    # Check all log files
-    all_log_files = glob.glob("*_logs*.jsonl")
-    
-    for workflow_id, config in WORKFLOW_REGISTRY.items():
-        log_pattern = config["log_pattern"]
-        log_files = glob.glob(log_pattern)
-        
-        if not log_files:
-            continue
-        
-        # Analyze log files to get workflow stats
-        total_events = 0
-        agents = {}
-        agent_last_calls = {}
-        last_seen = None
-        runs = set()
-        
-        for file_path in log_files:
-            try:
-                with open(file_path, 'r') as f:
-                    for line in f:
-                        if line.strip():
-                            try:
-                                event = json.loads(line.strip())
-                                total_events += 1
-                                
-                                # Track agents - prioritize tags['agent'] (set by AgentLogger) over agent.name
-                                tags = event.get('tags', {})
-                                agent_info = event.get('agent', {})
-                                
-                                # AgentLogger sets agent name in tags, prioritize that
-                                agent_name = tags.get('agent')
-                                if not agent_name:
-                                    # Fall back to agent.name if tags don't have it
-                                    agent_name = agent_info.get('name')
-                                
-                                # Also get role from tags or agent field
-                                agent_role = tags.get('role') or agent_info.get('role')
-                                
-                                if agent_name:
-                                    if agent_name not in agents:
-                                        agents[agent_name] = {
-                                            'events': 0,
-                                            'role': agent_role,
-                                            'last_call': None,
-                                            'last_call_time': None
-                                        }
-                                    agents[agent_name]['events'] += 1
-                                    # Update role if we found one
-                                    if agent_role and not agents[agent_name]['role']:
-                                        agents[agent_name]['role'] = agent_role
-                                    
-                                    # Track last call - check multiple sources
-                                    call_name = None
-                                    metadata = event.get('metadata', {})
-                                    action = event.get('action', {})
-                                    
-                                    # For AgentLogger events, action is in metadata
-                                    if tags.get('event_type') == 'action':
-                                        # AgentLogger stores action in metadata.action
-                                        call_name = metadata.get('action')
-                                    elif tags.get('event_type') == 'decision':
-                                        call_name = metadata.get('decision')
-                                    # For regular events, check action.name
-                                    elif action:
-                                        call_name = action.get('name')
-                                    # Fallback to metadata
-                                    if not call_name:
-                                        call_name = metadata.get('action') or metadata.get('agent_action')
-                                    
-                                    if call_name:
-                                        telemetry = event.get('telemetry', {})
-                                        timestamp = telemetry.get('timestamp_start')
-                                        if timestamp:
-                                            if (agents[agent_name]['last_call_time'] is None or 
-                                                timestamp > agents[agent_name]['last_call_time']):
-                                                agents[agent_name]['last_call'] = call_name
-                                                agents[agent_name]['last_call_time'] = timestamp
-                                    
-                                    # Track timestamp
-                                    telemetry = event.get('telemetry', {})
-                                    timestamp = telemetry.get('timestamp_start')
-                                    if timestamp:
-                                        if last_seen is None or timestamp > last_seen:
-                                            last_seen = timestamp
-                                
-                                # Track runs
-                                run_id = event.get('run_id')
-                                if run_id:
-                                    runs.add(run_id)
-                            except (json.JSONDecodeError, KeyError):
-                                pass
-            except Exception:
-                pass
-        
-        # Filter out pipeline/system name from agents if specified
-        pipeline_name = config.get("pipeline_name")
-        if pipeline_name and pipeline_name in agents:
-            del agents[pipeline_name]
-        
-        workflows[workflow_id] = {
-            "display_name": config["display_name"],
-            "log_pattern": log_pattern,
-            "log_files": log_files,
-            "notebook": config["notebook"],
-            "script": config["script"],
-            "total_events": total_events,
-            "agents": agents,
-            "unique_runs": len(runs),
-            "last_seen": last_seen
-        }
-    
-    return workflows
-
-
-def resolve_workflow_name(name: str) -> Optional[str]:
-    """Resolve workflow name or alias to canonical workflow ID."""
-    name_lower = name.lower()
-    
-    # Direct match
-    if name_lower in WORKFLOW_REGISTRY:
-        return name_lower
-    
-    # Check aliases
-    for workflow_id, config in WORKFLOW_REGISTRY.items():
-        if name_lower in [a.lower() for a in config.get("aliases", [])]:
-            return workflow_id
-    
-    return None
 
 
 def list_workflows():
@@ -262,27 +133,42 @@ def show_workflow_logs(workflow_name: str):
     workflow_id = resolve_workflow_name(workflow_name)
     
     if not workflow_id:
+        # Try direct match (for auto-discovered workflows)
+        workflows = discover_workflows()
+        if workflow_name.lower() in workflows:
+            workflow_id = workflow_name.lower()
+        else:
+            print(f"Error: Workflow '{workflow_name}' not found.")
+            print("\nAvailable workflows:")
+            for wf_id, info in workflows.items():
+                print(f"  - {info['display_name']} ({wf_id})")
+            return
+    
+    # Get workflow info from discovered workflows
+    workflows = discover_workflows()
+    
+    if workflow_id not in workflows:
         print(f"Error: Workflow '{workflow_name}' not found.")
+        print("\nAvailable workflows:")
+        for wf_id, info in workflows.items():
+            print(f"  - {info['display_name']} ({wf_id})")
         return
     
-    if workflow_id not in WORKFLOW_REGISTRY:
-        print(f"Error: Workflow '{workflow_name}' not in registry.")
-        return
-    
-    config = WORKFLOW_REGISTRY[workflow_id]
-    log_pattern = config["log_pattern"]
-    
-    import glob
-    log_files = glob.glob(log_pattern)
+    workflow_info = workflows[workflow_id]
+    log_files = workflow_info.get("log_files", [])
+    log_pattern = workflow_info.get("log_pattern", "")
+    display_name = workflow_info.get("display_name", workflow_id)
     
     if not log_files:
         print(f"No log files found for workflow '{workflow_name}'.")
-        print(f"Pattern: {log_pattern}")
+        if log_pattern:
+            print(f"Pattern: {log_pattern}")
         return
     
-    print(f"\nTelemetry Logs for {config['display_name']}")
+    print(f"\nTelemetry Logs for {display_name}")
     print("=" * 60)
-    print(f"Log Pattern: {log_pattern}")
+    if log_pattern:
+        print(f"Log Pattern: {log_pattern}")
     print(f"Found {len(log_files)} log file(s):\n")
     
     import json
@@ -317,24 +203,51 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888):
     workflow_id = resolve_workflow_name(workflow_name)
     
     if not workflow_id:
+        # Try direct match (for auto-discovered workflows)
+        workflows = discover_workflows()
+        if workflow_name.lower() in workflows:
+            workflow_id = workflow_name.lower()
+        else:
+            print(f"Error: Workflow '{workflow_name}' not found.")
+            print("\nAvailable workflows:")
+            for wf_id, info in workflows.items():
+                print(f"  - {info['display_name']} ({wf_id})")
+            return
+    
+    # Get workflow info from discovered workflows
+    workflows = discover_workflows()
+    
+    if workflow_id not in workflows:
         print(f"Error: Workflow '{workflow_name}' not found.")
+        print("\nAvailable workflows:")
+        for wf_id, info in workflows.items():
+            print(f"  - {info['display_name']} ({wf_id})")
         return
     
-    if workflow_id not in WORKFLOW_REGISTRY:
-        print(f"Error: Workflow '{workflow_name}' not in registry.")
+    workflow_info = workflows[workflow_id]
+    notebook_file = workflow_info.get("notebook")
+    display_name = workflow_info.get("display_name", workflow_id)
+    
+    if not notebook_file:
+        print(f"Error: No notebook found for workflow '{workflow_name}'.")
+        print("   Auto-discovered workflows may not have associated notebooks.")
+        print("   You can create one or add it to workflows.json.")
         return
     
-    config = WORKFLOW_REGISTRY[workflow_id]
-    notebook_file = config["notebook"]
-    package_dir = Path(__file__).parent.parent
-    notebook_path = package_dir / notebook_file
+    package_dir = get_repo_root()
+    
+    # Check notebooks subdirectory first, then root
+    notebook_path = package_dir / "notebooks" / notebook_file
+    if not notebook_path.exists():
+        notebook_path = package_dir / notebook_file
     
     if not notebook_path.exists():
         print(f"Error: Notebook not found at {notebook_path}")
-        print(f"   Make sure you've run the workflow first.")
+        print(f"   Expected notebook: {notebook_file}")
+        print(f"   Make sure the notebook exists in the project directory.")
         sys.exit(1)
     
-    print(f"Opening {config['display_name']} Analysis Notebook...")
+    print(f"Opening {display_name} Analysis Notebook...")
     print(f"   Notebook: {notebook_path}")
     print(f"   Port: {port}")
     print("\nThe Jupyter notebook will open in your browser.")
@@ -356,6 +269,7 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888):
     sys.exit(result.returncode)
 
 
+<<<<<<< HEAD
 def collector_main(args=None):
     """
     Main entry point for the collector CLI.
@@ -521,12 +435,14 @@ def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
         )
         
         sys.exit(result.returncode)
+=======
+>>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
 
 
 def run_logs_command(command: str, pattern: str = "*_logs*.jsonl", 
                      notebook: str = "agent", port: int = 8888):
     """Run logs analysis commands."""
-    package_dir = Path(__file__).parent.parent
+    package_dir = get_repo_root()
     
     if command == "list":
         import glob
@@ -814,6 +730,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
         sys.exit(result.returncode)
 
 
+<<<<<<< HEAD
 def eval_main():
     """Standalone entry point for eval command."""
     parser = argparse.ArgumentParser(
@@ -831,6 +748,8 @@ def eval_main():
     run_eval_demo(args.demo, args.transactions, args.output_dir)
 
 
+=======
+>>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
 def logs_main():
     """Standalone entry point for logs command."""
     parser = argparse.ArgumentParser(
@@ -1032,8 +951,8 @@ This will:
         # Pass the parsed args to collector_main
         collector_main(args)
     elif args.main_command == "eval":
-        # Pass the parsed args
-        run_eval_demo(args.demo, args.transactions, args.output_dir)
+        # Pass the parsed args to eval_main
+        eval_main(args)
     elif args.main_command == "workflows":
         list_workflows()
     elif args.main_command == "map":

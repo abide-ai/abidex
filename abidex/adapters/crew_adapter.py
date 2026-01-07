@@ -10,7 +10,6 @@ from ..client import TelemetryClient, get_client, Event, EventType
 from ..spans import AgentRun, ToolCall
 from ..utils.id_utils import generate_run_id
 
-
 class CrewAdapter:
     """
     Adapter for tracking CrewAI crew executions, agent tasks, and tool usage.

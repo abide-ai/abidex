@@ -1,77 +1,21 @@
 # AbideX
 
-AbideX is an SDK for AI agents, providing industry-standard observability and monitoring capabilities for agent workflows, model calls, and tool executions.
-
-## Features
-
-- **OpenTelemetry Native**: Built entirely on OpenTelemetry - all functions use OpenTelemetry APIs
-- **Comprehensive Telemetry**: Track agent runs, model calls, and tool executions with detailed context
-- **HTTP Collector**: FastAPI-based collector for centralized telemetry gathering
-- **Enhanced Event Schema**: Built-in latency tracking, token counting, and performance metrics
-- **Sampling Support**: Configurable sampling rates for high-volume scenarios
-- **Data Privacy**: Automatic redaction of sensitive information
-- **Easy Integration**: Simple context managers and decorators for minimal code changes
-- **Multiple Sinks**: Export data to JSONL files, HTTP endpoints, OTLP (OpenTelemetry Protocol), or Prometheus metrics
-- **Framework Adapters**: Built-in support for popular AI frameworks (Claude, CrewAI, n8n)
-- **Automatic Instrumentation**: Decorator and monkey-patching support for popular AI libraries
-
-## Technology Stack
-
-### Core Technologies
-
-- **Python 3.8+**: Modern Python with type hints and async support
-- **OpenTelemetry**: Industry-standard observability framework
- 
-### Core Dependencies
-
-- **FastAPI**: Modern, fast web framework for the HTTP collector
-- **Uvicorn**: ASGI server for running the collector
-- **Pydantic**: Data validation and settings management
-- **Requests**: HTTP client for external API calls
-
-### Optional Dependencies
-
-- **Prometheus Client**: For Prometheus metrics export
-- **Anthropic SDK**: For Claude AI integration
-- **CrewAI**: For CrewAI framework integration
-
-### Development Tools
-
-- **pytest**: Testing framework
-- **black**: Code formatter
-- **isort**: Import sorter
-- **flake8**: Linter
-- **mypy**: Type checker
-- **pre-commit**: Git hooks for code quality
-
-### Compatible Backends
-
-AbideX works with any OpenTelemetry-compatible backend:
-
-- **Jaeger**: Distributed tracing backend
-- **Zipkin**: Distributed tracing system
-- **Prometheus**: Metrics and monitoring
-- **Grafana**: Visualization and dashboards
-- **Datadog**: APM and monitoring
-- **New Relic**: Application performance monitoring
-- **Honeycomb**: Observability platform
-- **Lightstep**: Observability platform
-- **Any OTLP-compatible backend**: Via OTLP exporter
-
-### Package Management
-
-- **pip**: Standard Python package installer
-- **uv**: Fast Python package installer (recommended)
+OpenTelemetry-native observability SDK for AI agents, providing comprehensive telemetry for agent workflows, model calls, and tool executions.
 
 ## Installation
 
-### Basic Installation
-
 ```bash
+<<<<<<< HEAD
 # Recommended: using uv (fast, creates environment automatically)
 uv install abidex
 
 # Using pip
+=======
+# Recommended: using uv (faster)
+uv add abidex
+
+# Or using pip
+>>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
 pip install abidex
 ```
 
@@ -101,84 +45,56 @@ pip install "abidex[all]"
 
 **Note**: The HTTP collector dependencies (FastAPI, uvicorn) are now included by default, so the collector command works out of the box.
 
+## CLI
+
+Use the CLI to run demos, explore workflows, and analyze logs:
+
+```bash
+# Run demos
+abidex eval simple
+abidex eval weather
+abidex eval fraud --transactions 50
+
+# Discover workflows and inspect logs
+abidex workflows
+abidex map fraud_detection
+abidex logs fraud_detection
+abidex notebook fraud_detection
+
+# Analyze logs across files
+abidex-logs list
+abidex-logs summary --pattern "fraud_detection_logs*.jsonl"
+abidex-logs analyze --notebook fraud
+
+# Start collector
+abidex collector --port 8000
+```
+
 ## Quick Start
 
-### Using OpenTelemetry Directly
-
 ```python
-from abidex import (
-    trace, metrics, Span, Status, StatusCode,
-    TracerProvider, MeterProvider,
-    OTLPSpanExporter, OTLPMetricExporter
-)
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
-# Set up OpenTelemetry
-tracer_provider = TracerProvider()
-tracer_provider.add_span_processor(
-    BatchSpanProcessor(OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces"))
-)
-trace.set_tracer_provider(tracer_provider)
-
-meter_provider = MeterProvider(
-    metric_readers=[
-        PeriodicExportingMetricReader(
-            OTLPMetricExporter(endpoint="http://localhost:4318/v1/metrics")
-        )
-    ]
-)
-metrics.set_meter_provider(meter_provider)
-
-# Use OpenTelemetry directly
-tracer = trace.get_tracer("my_agent")
-with tracer.start_as_current_span("agent_task") as span:
-    span.set_attribute("agent.name", "MyAgent")
-    span.set_attribute("task.type", "processing")
-    # ... your agent logic ...
-
-# Record metrics
-meter = metrics.get_meter("my_agent")
-counter = meter.create_counter("tasks.completed")
-counter.add(1, attributes={"agent": "MyAgent"})
-```
-
-### Using AbideX Client (OpenTelemetry Backend)
-
-```python
-from abidex import TelemetryClient, AgentRun, get_logger
+from abidex import TelemetryClient, AgentRun
 from abidex.sinks import JSONLSink
 
-# Set up enhanced telemetry client with sampling
-client = TelemetryClient(
-    sample_rate=0.8,  # Sample 80% of events
-    metadata={"version": "1.0", "environment": "production"}
-)
+client = TelemetryClient()
 client.add_sink(JSONLSink("telemetry.jsonl"))
 
-# Get a telemetry-integrated logger
-logger = get_logger("my_agent", client=client)
-
-# Track an agent run with automatic performance metrics
-with AgentRun("process_user_query", client=client) as run:
-    run.add_data("user_id", "123")
-    
-    # Use context manager for automatic latency/token tracking
-    with client.infer("gpt-4", "openai") as event:
-        # Make your API call here
-        response = openai_client.chat.completions.create(...)
-        
-        # Set token counts (extracted automatically with instrumentation)
-        event.input_token_count = 150
-        event.output_token_count = 75
-        event.total_tokens = 225
-    
-    # Log with telemetry integration
-    logger.info("Query processed successfully", 
-                data={"processing_time": 1.2, "tokens_used": 225})
+with AgentRun("my_task", client=client) as run:
+    # Your agent code here
+    pass
 ```
 
-### Enhanced Features
+## Documentation
+
+- **[Technical Documentation](documentation/draft.md)**: Complete guide including:
+  - CLI workflow & command execution
+  - CLI usage guide
+  - Querying agents and pipelines
+  - Architecture & design decisions
+  - Integration examples
+- **[Examples](examples/)**: Usage examples
+
+### Usage Examples
 
 ```python
 # Decorator-based instrumentation
@@ -340,7 +256,7 @@ uvicorn.run(app, host="0.0.0.0", port=8000)
 Or use the CLI:
 
 ```bash
-abide-collector --port 8000 --auth-token your-secret-token
+abidex collector --port 8000 --auth-token your-secret-token
 ```
 
 ### Data Privacy and Redaction
@@ -424,29 +340,38 @@ See the `/examples` directory for complete usage examples:
 - `http_collector.py`: Running a telemetry collector
 - `custom_sinks.py`: Creating custom sinks
 
+- **[Technical Documentation](documentation/draft.md)**: Complete guide including:
+  - CLI workflow & command execution
+  - CLI usage guide
+  - Querying agents and pipelines
+  - Architecture & design decisions
+  - Integration examples
+- **[Examples](examples/)**: Usage examples
+
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Run the test suite: `pytest`
-5. Submit a pull request
-
-## Development Setup
-
 ```bash
-git clone https://github.com/abide-ai/agentkit
-cd agentkit
+git clone https://github.com/abide-ai/abidex.git
+cd abidex
+
+# Install in development mode
 pip install -e .[dev]
-pre-commit install
+# Or using uv (faster)
+uv pip install -e .[dev]
+
+# For testing unpublished packages in other projects:
+# uv pip install /path/to/abidex
+# or
+# uv add /path/to/abidex
+
+pytest
 ```
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License
 
 ## Support
 
-- Documentation: https://docs.abide.ai/agentkit
-- Issues: https://github.com/abide-ai/agentkit/issues
-- Discord: https://discord.gg/abide-ai
+- Issues: https://github.com/abide-ai/abidex/issues
+- Discord: https://discord.gg/ZHuWhGqCm4
