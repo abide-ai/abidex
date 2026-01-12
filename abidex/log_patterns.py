@@ -159,7 +159,7 @@ def find_log_files(
 def _iter_pattern_matches(pattern: str, search_dir: Path) -> Iterable[Path]:
     pattern = pattern.strip()
     if not pattern:
-        return []
+        return
 
     if pattern.startswith("re:"):
         regex = re.compile(pattern[3:])
