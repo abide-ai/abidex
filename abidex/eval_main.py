@@ -6,66 +6,60 @@ import argparse
 import os
 import subprocess
 import sys
-from pathlib import Path
+from typing import Optional
 
 from .cli_common import get_repo_root
+from .workflows.paths import resolve_workflow_script_path
+from .workflows.registry import WorkflowRegistry
 
 
-def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
+def run_eval_demo(
+    demo: str,
+    transactions: int = 25,
+    output_dir: str = ".",
+    script_path: Optional[str] = None,
+):
     """Run an agent demo."""
-    # Get the package directory
-    package_dir = get_repo_root()
-    demo_dir = package_dir
+    repo_root = get_repo_root()
+    registry = WorkflowRegistry.load_default()
+    demo_script = resolve_workflow_script_path(
+        demo,
+        registry=registry,
+        script_override=script_path,
+        repo_root=repo_root,
+    )
 
-    if demo in ("simple", "weather"):
-        demo_script = demo_dir / "simple_agent_test.py"
-        if not demo_script.exists():
-            print(f"Error: Demo script not found at {demo_script}")
-            sys.exit(1)
+    if not demo_script or not demo_script.exists():
+        if script_path:
+            print(f"Error: Demo script not found at {script_path}")
+        else:
+            print(f"Error: Demo script not found for '{demo}'")
+        sys.exit(1)
 
-        print(" Running Weather Agent Logging Demo...")
-        print("=" * 50)
+    workflow = registry.resolve_name(demo)
+    display_name = workflow.display_name if workflow else demo
 
-        # Run the simple agent test
-        env = os.environ.copy()
-        env['PYTHONPATH'] = str(package_dir) + os.pathsep + env.get('PYTHONPATH', '')
-
-        result = subprocess.run(
-            [sys.executable, str(demo_script)],
-            cwd=str(demo_dir),
-            env=env
-        )
-
-        sys.exit(result.returncode)
-
-    elif demo == "fraud":
-        demo_script = demo_dir / "fraud_detection_pipeline.py"
-        if not demo_script.exists():
-            print(f"Error: Demo script not found at {demo_script}")
-            sys.exit(1)
-
+    if demo in ("fraud", "fraud_detection"):
         print(" Running Fraud Detection Pipeline Demo...")
         print("=" * 50)
         print(f"Processing {transactions} transactions...")
-
-        # Run the fraud detection pipeline
-        env = os.environ.copy()
-        env['PYTHONPATH'] = str(package_dir) + os.pathsep + env.get('PYTHONPATH', '')
-
-        # Pass transaction count as environment variable
-        env['FRAUD_DEMO_TRANSACTIONS'] = str(transactions)
-
-        result = subprocess.run(
-            [sys.executable, str(demo_script)],
-            cwd=str(demo_dir),
-            env=env
-        )
-
-        sys.exit(result.returncode)
-
     else:
-        print(f"Error: Unknown demo '{demo}'")
-        sys.exit(1)
+        print(f" Running {display_name} Demo...")
+        print("=" * 50)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+
+    if demo in ("fraud", "fraud_detection"):
+        env["FRAUD_DEMO_TRANSACTIONS"] = str(transactions)
+
+    result = subprocess.run(
+        [sys.executable, str(demo_script)],
+        cwd=str(demo_script.parent),
+        env=env
+    )
+
+    sys.exit(result.returncode)
 
 
 def eval_main(args=None):
@@ -87,7 +81,11 @@ def eval_main(args=None):
         parser.add_argument("--transactions", type=int, default=25,
                            help="Number of transactions (for fraud demo)")
         parser.add_argument("--output-dir", default=".", help="Output directory")
+        parser.add_argument(
+            "--script-path",
+            help="Optional path to the demo script (overrides workflow config)"
+        )
 
         args = parser.parse_args()
     
-    run_eval_demo(args.demo, args.transactions, args.output_dir)
+    run_eval_demo(args.demo, args.transactions, args.output_dir, args.script_path)

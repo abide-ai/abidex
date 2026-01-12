@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 from ..cli_common import get_repo_root
+from ..log_patterns import normalize_log_patterns
 
 
 @dataclass(frozen=True)
 class WorkflowDescription:
     id: str
     display_name: str
-    log_pattern: str
+    log_patterns: List[str]
     notebook: str
     script: str
     aliases: List[str] = field(default_factory=list)
@@ -30,7 +31,10 @@ class WorkflowDescription:
 
         workflow_id = required_field("id")
         display_name = required_field("display_name")
-        log_pattern = required_field("log_pattern")
+        raw_patterns = data.get("log_patterns", data.get("log_pattern"))
+        log_patterns = normalize_log_patterns(raw_patterns)
+        if not log_patterns:
+            raise ValueError("Missing or invalid field: log_pattern")
         notebook = required_field("notebook")
         script = required_field("script")
 
@@ -51,12 +55,16 @@ class WorkflowDescription:
         return cls(
             id=workflow_id,
             display_name=display_name,
-            log_pattern=log_pattern,
+            log_patterns=log_patterns,
             notebook=notebook,
             script=script,
             aliases=clean_aliases,
             pipeline_name=pipeline_name
         )
+
+    @property
+    def log_pattern(self) -> str:
+        return self.log_patterns[0] if self.log_patterns else ""
 
 
 class WorkflowRegistry:
