@@ -31,6 +31,7 @@ from .cli_common import get_repo_root
 from .log_patterns import find_log_files, format_log_patterns, resolve_log_patterns
 from .workflows.registry import WorkflowRegistry
 from .workflows.discovery import discover_workflows, resolve_workflow_name
+from .workflows.paths import resolve_notebook_path, resolve_workflow_script_path
 
 
 
@@ -182,53 +183,24 @@ def show_workflow_logs(workflow_name: str):
 
 def open_workflow_notebook(workflow_name: str, port: int = 8888):
     """Open Jupyter notebook for a specific workflow."""
-    workflow_id = resolve_workflow_name(workflow_name)
-    
-    if not workflow_id:
-        # Try direct match (for auto-discovered workflows)
-        workflows = discover_workflows()
-        if workflow_name.lower() in workflows:
-            workflow_id = workflow_name.lower()
-        else:
-            print(f"Error: Workflow '{workflow_name}' not found.")
-            print("\nAvailable workflows:")
-            for wf_id, info in workflows.items():
-                print(f"  - {info['display_name']} ({wf_id})")
-            return
-    
-    # Get workflow info from discovered workflows
-    workflows = discover_workflows()
-    
-    if workflow_id not in workflows:
-        print(f"Error: Workflow '{workflow_name}' not found.")
-        print("\nAvailable workflows:")
-        for wf_id, info in workflows.items():
-            print(f"  - {info['display_name']} ({wf_id})")
-        return
-    
-    workflow_info = workflows[workflow_id]
-    notebook_file = workflow_info.get("notebook")
-    display_name = workflow_info.get("display_name", workflow_id)
-    
-    if not notebook_file:
-        print(f"Error: No notebook found for workflow '{workflow_name}'.")
-        print("   Auto-discovered workflows may not have associated notebooks.")
-        print("   You can create one or add it to workflows.json.")
-        return
-    
     package_dir = get_repo_root()
-    
-    # Check notebooks subdirectory first, then root
-    notebook_path = package_dir / "notebooks" / notebook_file
-    if not notebook_path.exists():
-        notebook_path = package_dir / notebook_file
-    
-    if not notebook_path.exists():
-        print(f"Error: Notebook not found at {notebook_path}")
-        print(f"   Expected notebook: {notebook_file}")
-        print(f"   Make sure the notebook exists in the project directory.")
-        sys.exit(1)
-    
+
+    registry = WorkflowRegistry.load_default()
+    workflow = registry.resolve_name(workflow_name)
+    display_name = workflow.display_name if workflow else workflow_name
+    notebook_path = resolve_notebook_path(
+        workflow_name,
+        registry=registry,
+        repo_root=package_dir,
+    )
+
+    if not notebook_path or not notebook_path.exists():
+        print(f"Error: Notebook not found for '{workflow_name}'.")
+        print("\nAvailable workflows:")
+        for info in registry.list():
+            print(f"  - {info.display_name} ({info.id})")
+        return
+
     print(f"Opening {display_name} Analysis Notebook...")
     print(f"   Notebook: {notebook_path}")
     print(f"   Port: {port}")
@@ -245,7 +217,7 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888):
     # Launch Jupyter notebook
     result = subprocess.run(
         ["jupyter", "notebook", str(notebook_path), "--port", str(port)],
-        cwd=str(package_dir)
+        cwd=str(notebook_path.parent)
     )
     
     sys.exit(result.returncode)
@@ -366,57 +338,53 @@ def collector_main(args=None):
     )
 
 
-def run_eval_demo(demo: str, transactions: int = 25, output_dir: str = "."):
+def run_eval_demo(
+    demo: str,
+    transactions: int = 25,
+    output_dir: str = ".",
+    script_path: Optional[str] = None,
+):
     """Run an agent demo."""
-    # Get the package directory
-    package_dir = Path(__file__).parent
-    demo_dir = package_dir
-    
-    if demo == "weather":
-        demo_script = demo_dir / "weather.py"
-        if not demo_script.exists():
-            print(f"Error: Demo script not found at {demo_script}")
-            sys.exit(1)
-        
-        print(" Running Weather Agent Logging Demo...")
-        print("=" * 50)
-        
-        # Run the weather agent demo
-        env = os.environ.copy()
-        env['PYTHONPATH'] = str(package_dir) + os.pathsep + env.get('PYTHONPATH', '')
-        
-        result = subprocess.run(
-            [sys.executable, str(demo_script)],
-            cwd=str(demo_dir),
-            env=env
-        )
-        
-        sys.exit(result.returncode)
-    
-    elif demo == "fraud":
-        demo_script = demo_dir / "fraud_detection_pipeline.py"
-        if not demo_script.exists():
-            print(f"Error: Demo script not found at {demo_script}")
-            sys.exit(1)
-        
+    repo_root = get_repo_root()
+    registry = WorkflowRegistry.load_default()
+    demo_script = resolve_workflow_script_path(
+        demo,
+        registry=registry,
+        script_override=script_path,
+        repo_root=repo_root,
+    )
+
+    if not demo_script or not demo_script.exists():
+        if script_path:
+            print(f"Error: Demo script not found at {script_path}")
+        else:
+            print(f"Error: Demo script not found for '{demo}'")
+        sys.exit(1)
+
+    workflow = registry.resolve_name(demo)
+    display_name = workflow.display_name if workflow else demo
+
+    if demo in ("fraud", "fraud_detection"):
         print(" Running Fraud Detection Pipeline Demo...")
         print("=" * 50)
         print(f"Processing {transactions} transactions...")
-        
-        # Run the fraud detection pipeline
-        env = os.environ.copy()
-        env['PYTHONPATH'] = str(package_dir) + os.pathsep + env.get('PYTHONPATH', '')
-        
-        # Pass transaction count as environment variable
-        env['FRAUD_DEMO_TRANSACTIONS'] = str(transactions)
-        
-        result = subprocess.run(
-            [sys.executable, str(demo_script)],
-            cwd=str(demo_dir),
-            env=env
-        )
-        
-        sys.exit(result.returncode)
+    else:
+        print(f" Running {display_name} Demo...")
+        print("=" * 50)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+
+    if demo in ("fraud", "fraud_detection"):
+        env["FRAUD_DEMO_TRANSACTIONS"] = str(transactions)
+
+    result = subprocess.run(
+        [sys.executable, str(demo_script)],
+        cwd=str(demo_script.parent),
+        env=env
+    )
+
+    sys.exit(result.returncode)
 
 
 def run_logs_command(command: str, patterns=None,
@@ -664,21 +632,29 @@ def run_logs_command(command: str, patterns=None,
             print()
     
     elif command == "analyze":
-        # Determine which notebook to open
-        if notebook == "fraud":
-            notebook_file = package_dir / "fraud_detection_analysis.ipynb"
-            notebook_name = "Fraud Detection Analysis"
-        else:
-            notebook_file = package_dir / "agent_logs_analysis.ipynb"
-            notebook_name = "Agent Logs Analysis"
-        
-        if not notebook_file.exists():
-            print(f" Error: Notebook not found at {notebook_file}")
-            print(f"   Make sure you've run a demo first to generate log files.")
+        registry = WorkflowRegistry.load_default()
+        notebook_path = resolve_notebook_path(
+            notebook,
+            registry=registry,
+            repo_root=package_dir,
+        )
+
+        if not notebook_path:
+            if notebook:
+                print(f" Error: Notebook not found for '{notebook}'.")
+            else:
+                print(" Error: No analysis notebook found.")
+            sys.exit(1)
+
+        notebook_name = notebook_path.stem.replace("_", " ").title()
+
+        if not notebook_path.exists():
+            print(f" Error: Notebook not found at {notebook_path}")
+            print("   Make sure you've run a demo first to generate log files.")
             sys.exit(1)
         
         print(f" Opening {notebook_name}...")
-        print(f"   Notebook: {notebook_file}")
+        print(f"   Notebook: {notebook_path}")
         print(f"   Port: {port}")
         print("\n The Jupyter notebook will open in your browser.")
         print("   Press Ctrl+C to stop the server.\n")
@@ -692,28 +668,34 @@ def run_logs_command(command: str, patterns=None,
         
         # Launch Jupyter notebook
         result = subprocess.run(
-            ["jupyter", "notebook", str(notebook_file), "--port", str(port)],
-            cwd=str(package_dir)
+            ["jupyter", "notebook", str(notebook_path), "--port", str(port)],
+            cwd=str(notebook_path.parent)
         )
         
         sys.exit(result.returncode)
 
 
-def eval_main():
+def eval_main(args=None):
     """Standalone entry point for eval command."""
-    parser = argparse.ArgumentParser(
-        description="Abide AgentKit Evaluation - Run agent demos and tests",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    
-    parser.add_argument("demo", choices=["weather", "fraud"],
-                       help="Which demo to run")
-    parser.add_argument("--transactions", type=int, default=25,
-                       help="Number of transactions (for fraud demo)")
-    parser.add_argument("--output-dir", default=".", help="Output directory")
-    
-    args = parser.parse_args()
-    run_eval_demo(args.demo, args.transactions, args.output_dir)
+    if args is None:
+        parser = argparse.ArgumentParser(
+            description="Abide AgentKit Evaluation - Run agent demos and tests",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+
+        parser.add_argument("demo", choices=["weather", "fraud"],
+                           help="Which demo to run")
+        parser.add_argument("--transactions", type=int, default=25,
+                           help="Number of transactions (for fraud demo)")
+        parser.add_argument("--output-dir", default=".", help="Output directory")
+        parser.add_argument(
+            "--script-path",
+            help="Optional path to the demo script (overrides workflow config)"
+        )
+
+        args = parser.parse_args()
+
+    run_eval_demo(args.demo, args.transactions, args.output_dir, args.script_path)
 
 def logs_main():
     """Standalone entry point for logs command."""
@@ -729,8 +711,10 @@ def logs_main():
         action="append",
         help="Log file pattern(s). Can be repeated or comma-separated."
     )
-    parser.add_argument("--notebook", choices=["agent", "fraud"], default="agent",
-                       help="Which notebook to open")
+    parser.add_argument(
+        "--notebook",
+        help="Workflow name or notebook path to open"
+    )
     parser.add_argument("--port", type=int, default=8888,
                        help="Port for Jupyter notebook")
     
@@ -823,6 +807,10 @@ Examples:
     eval_parser.add_argument("--transactions", type=int, default=25,
                             help="Number of transactions to process (for fraud demo)")
     eval_parser.add_argument("--output-dir", default=".", help="Directory to save log files")
+    eval_parser.add_argument(
+        "--script-path",
+        help="Optional path to the demo script (overrides workflow config)"
+    )
     
     # Workflows command
     workflows_parser = subparsers.add_parser(

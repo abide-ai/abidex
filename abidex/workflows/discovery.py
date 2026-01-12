@@ -115,43 +115,41 @@ def _analyze_log_file_content(file_path: str, max_sample_lines: int = 100) -> di
 
 
 def _find_matching_script(workflow_name: str, search_dir: Path) -> Optional[str]:
-    """Find matching Python script for workflow.
-    
-    Looks for:
-    - {workflow_name}.py
-    - {workflow_name}_pipeline.py
-    - {workflow_name}_test.py
-    """
+    """Find matching Python script for workflow."""
     patterns = [
         f"{workflow_name}.py",
         f"{workflow_name}_pipeline.py",
         f"{workflow_name}_test.py",
         f"{workflow_name}_agent.py"
     ]
-    
-    for pattern in patterns:
-        matches = glob.glob(str(search_dir / pattern))
-        if matches:
-            return Path(matches[0]).name
+
+    search_paths = [search_dir, search_dir / "examples"]
+
+    for search_path in search_paths:
+        for pattern in patterns:
+            matches = glob.glob(str(search_path / pattern))
+            if matches:
+                return Path(matches[0]).name
     
     return None
 
 
 def _find_matching_notebook(workflow_name: str, search_dir: Path) -> Optional[str]:
-    """Find matching Jupyter notebook for workflow.
-    
-    Looks for:
-    - {workflow_name}_analysis.ipynb
-    - {workflow_name}.ipynb
-    """
+    """Find matching Jupyter notebook for workflow."""
     patterns = [
         f"{workflow_name}_analysis.ipynb",
+        f"{workflow_name}_logs_analysis.ipynb",
         f"{workflow_name}.ipynb"
     ]
-    
+
     # Also check notebooks subdirectory
-    search_paths = [search_dir, search_dir / "notebooks"]
-    
+    search_paths = [
+        search_dir,
+        search_dir / "notebooks",
+        search_dir / "examples",
+        search_dir / "examples" / "notebooks",
+    ]
+
     for search_path in search_paths:
         for pattern in patterns:
             matches = glob.glob(str(search_path / pattern))

@@ -7,6 +7,7 @@ from ..cli_common import get_repo_root
 from ..log_patterns import find_log_files, format_log_patterns
 from .discovery import discover_workflows
 from .registry import WorkflowRegistry
+from .paths import resolve_workflow_notebook_path
 
 
 def list_workflows(registry: WorkflowRegistry = None):
@@ -147,19 +148,16 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888,
     if registry is None:
         registry = WorkflowRegistry.load_default()
 
-    workflow = registry.resolve_name(workflow_name)
-
-    if not workflow:
-        print(f"Error: Workflow '{workflow_name}' not found.")
-        return
-
-    notebook_file = workflow.notebook
     package_dir = get_repo_root()
-    notebook_path = package_dir / notebook_file
+    notebook_path = resolve_workflow_notebook_path(
+        workflow_name,
+        registry=registry,
+        repo_root=package_dir,
+    )
 
-    if not notebook_path.exists():
-        print(f"Error: Notebook not found at {notebook_path}")
-        print("   Make sure you've run the workflow first.")
+    if not notebook_path or not notebook_path.exists():
+        print(f"Error: Notebook not found for '{workflow_name}'.")
+        print("   Make sure you've run the workflow or configured a notebook path.")
         sys.exit(1)
 
     print(f"Opening {workflow.display_name} Analysis Notebook...")
