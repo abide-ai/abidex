@@ -9,13 +9,29 @@ import subprocess
 from typing import Optional
 from pathlib import Path
 
+try:
+    import uvicorn
+    UVICORN_AVAILABLE = True
+except ImportError:
+    UVICORN_AVAILABLE = False
+
+try:
+    from .collectors import create_collector_app
+    COLLECTOR_AVAILABLE = True
+except ImportError:
+    COLLECTOR_AVAILABLE = False
+
+from .client import TelemetryClient
+from .sinks import JSONLSink, HTTPSink
+
 # Import functions from dedicated modules
 from .collector_main import collector_main
 from .eval_main import eval_main
 from .cli_common import get_repo_root
+from .log_patterns import find_log_files, format_log_patterns, resolve_log_patterns
 from .workflows.registry import WorkflowRegistry
 from .workflows.discovery import discover_workflows, resolve_workflow_name
-
+from .workflows.paths import resolve_notebook_path, resolve_workflow_script_path
 
 
 
@@ -120,19 +136,22 @@ def show_workflow_logs(workflow_name: str):
     
     workflow_info = workflows[workflow_id]
     log_files = workflow_info.get("log_files", [])
+    log_patterns = workflow_info.get("log_patterns") or []
     log_pattern = workflow_info.get("log_pattern", "")
     display_name = workflow_info.get("display_name", workflow_id)
+    formatted_patterns = format_log_patterns(log_patterns) or log_pattern
     
     if not log_files:
         print(f"No log files found for workflow '{workflow_name}'.")
-        if log_pattern:
-            print(f"Pattern: {log_pattern}")
+        if formatted_patterns:
+            print(f"Patterns: {formatted_patterns}")
         return
     
     print(f"\nTelemetry Logs for {display_name}")
     print("=" * 60)
-    if log_pattern:
-        print(f"Log Pattern: {log_pattern}")
+    if formatted_patterns:
+        label = "Log Pattern" if len(log_patterns) <= 1 else "Log Patterns"
+        print(f"{label}: {formatted_patterns}")
     print(f"Found {len(log_files)} log file(s):\n")
     
     import json
@@ -164,53 +183,24 @@ def show_workflow_logs(workflow_name: str):
 
 def open_workflow_notebook(workflow_name: str, port: int = 8888):
     """Open Jupyter notebook for a specific workflow."""
-    workflow_id = resolve_workflow_name(workflow_name)
-    
-    if not workflow_id:
-        # Try direct match (for auto-discovered workflows)
-        workflows = discover_workflows()
-        if workflow_name.lower() in workflows:
-            workflow_id = workflow_name.lower()
-        else:
-            print(f"Error: Workflow '{workflow_name}' not found.")
-            print("\nAvailable workflows:")
-            for wf_id, info in workflows.items():
-                print(f"  - {info['display_name']} ({wf_id})")
-            return
-    
-    # Get workflow info from discovered workflows
-    workflows = discover_workflows()
-    
-    if workflow_id not in workflows:
-        print(f"Error: Workflow '{workflow_name}' not found.")
-        print("\nAvailable workflows:")
-        for wf_id, info in workflows.items():
-            print(f"  - {info['display_name']} ({wf_id})")
-        return
-    
-    workflow_info = workflows[workflow_id]
-    notebook_file = workflow_info.get("notebook")
-    display_name = workflow_info.get("display_name", workflow_id)
-    
-    if not notebook_file:
-        print(f"Error: No notebook found for workflow '{workflow_name}'.")
-        print("   Auto-discovered workflows may not have associated notebooks.")
-        print("   You can create one or add it to workflows.json.")
-        return
-    
     package_dir = get_repo_root()
-    
-    # Check notebooks subdirectory first, then root
-    notebook_path = package_dir / "notebooks" / notebook_file
-    if not notebook_path.exists():
-        notebook_path = package_dir / notebook_file
-    
-    if not notebook_path.exists():
-        print(f"Error: Notebook not found at {notebook_path}")
-        print(f"   Expected notebook: {notebook_file}")
-        print(f"   Make sure the notebook exists in the project directory.")
-        sys.exit(1)
-    
+
+    registry = WorkflowRegistry.load_default()
+    workflow = registry.resolve_name(workflow_name)
+    display_name = workflow.display_name if workflow else workflow_name
+    notebook_path = resolve_notebook_path(
+        workflow_name,
+        registry=registry,
+        repo_root=package_dir,
+    )
+
+    if not notebook_path or not notebook_path.exists():
+        print(f"Error: Notebook not found for '{workflow_name}'.")
+        print("\nAvailable workflows:")
+        for info in registry.list():
+            print(f"  - {info.display_name} ({info.id})")
+        return
+
     print(f"Opening {display_name} Analysis Notebook...")
     print(f"   Notebook: {notebook_path}")
     print(f"   Port: {port}")
@@ -227,27 +217,196 @@ def open_workflow_notebook(workflow_name: str, port: int = 8888):
     # Launch Jupyter notebook
     result = subprocess.run(
         ["jupyter", "notebook", str(notebook_path), "--port", str(port)],
-        cwd=str(package_dir)
+        cwd=str(notebook_path.parent)
     )
     
     sys.exit(result.returncode)
 
 
 
+def collector_main(args=None):
+    """
+    Main entry point for the collector CLI.
+    
+    Args:
+        args: Parsed arguments (Namespace object). If None, will parse from sys.argv.
+    """
+    if not COLLECTOR_AVAILABLE:
+        print("Error: Collector is not available. Install with: uv install abidex (or pip install abidex)")
+        sys.exit(1)
+    
+    # If args not provided, parse them (for standalone usage)
+    if args is None:
+        parser = argparse.ArgumentParser(
+            description="Abide AgentKit Telemetry Collector",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+        
+        parser.add_argument(
+            "--host",
+            default="0.0.0.0",
+            help="Host to bind the collector to"
+        )
+        
+        parser.add_argument(
+            "--port",
+            type=int,
+            default=8000,
+            help="Port to bind the collector to"
+        )
+        
+        parser.add_argument(
+            "--auth-token",
+            help="Authentication token for API requests"
+        )
+        
+        parser.add_argument(
+            "--cors-origins",
+            nargs="*",
+            default=["*"],
+            help="Allowed CORS origins"
+        )
+        
+        parser.add_argument(
+            "--max-batch-size",
+            type=int,
+            default=1000,
+            help="Maximum batch size for event processing"
+        )
+        
+        parser.add_argument(
+            "--output-file",
+            help="Output file for JSONL sink (optional)"
+        )
+        
+        parser.add_argument(
+            "--forward-url",
+            help="HTTP URL to forward events to (optional)"
+        )
+        
+        parser.add_argument(
+            "--log-level",
+            choices=["debug", "info", "warning", "error"],
+            default="info",
+            help="Log level"
+        )
+        
+        parser.add_argument(
+            "--reload",
+            action="store_true",
+            help="Enable auto-reload for development"
+        )
+        
+        args = parser.parse_args()
+    
+    if not UVICORN_AVAILABLE:
+        print("Error: uvicorn is required to run the collector. Install with: uv install abidex (or pip install abidex)")
+        sys.exit(1)
+    
+    # Set up telemetry client with optional sinks
+    client = TelemetryClient()
+    
+    if args.output_file:
+        client.add_sink(JSONLSink(args.output_file))
+        print(f"Added JSONL sink: {args.output_file}")
+    
+    if args.forward_url:
+        client.add_sink(HTTPSink(args.forward_url))
+        print(f"Added HTTP sink: {args.forward_url}")
+    
+    # Create collector app
+    app = create_collector_app(
+        client=client,
+        auth_token=args.auth_token,
+        cors_origins=args.cors_origins,
+        max_batch_size=args.max_batch_size
+    )
+    
+    print(f"Starting Abide AgentKit Collector on {args.host}:{args.port}")
+    if args.auth_token:
+        print("Authentication enabled")
+    else:
+        print("WARNING: No authentication token set - collector is open to all requests")
+    
+    # Run with uvicorn
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level=args.log_level,
+        reload=args.reload
+    )
 
-def run_logs_command(command: str, pattern: str = "*_logs*.jsonl", 
+
+def run_eval_demo(
+    demo: str,
+    transactions: int = 25,
+    output_dir: str = ".",
+    script_path: Optional[str] = None,
+):
+    """Run an agent demo."""
+    repo_root = get_repo_root()
+    registry = WorkflowRegistry.load_default()
+    demo_script = resolve_workflow_script_path(
+        demo,
+        registry=registry,
+        script_override=script_path,
+        repo_root=repo_root,
+    )
+
+    if not demo_script or not demo_script.exists():
+        if script_path:
+            print(f"Error: Demo script not found at {script_path}")
+        else:
+            print(f"Error: Demo script not found for '{demo}'")
+        sys.exit(1)
+
+    workflow = registry.resolve_name(demo)
+    display_name = workflow.display_name if workflow else demo
+
+    if demo in ("fraud", "fraud_detection"):
+        print(" Running Fraud Detection Pipeline Demo...")
+        print("=" * 50)
+        print(f"Processing {transactions} transactions...")
+    else:
+        print(f" Running {display_name} Demo...")
+        print("=" * 50)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+
+    if demo in ("fraud", "fraud_detection"):
+        env["FRAUD_DEMO_TRANSACTIONS"] = str(transactions)
+
+    result = subprocess.run(
+        [sys.executable, str(demo_script)],
+        cwd=str(demo_script.parent),
+        env=env
+    )
+
+    sys.exit(result.returncode)
+
+
+def run_logs_command(command: str, patterns=None,
                      notebook: str = "agent", port: int = 8888):
     """Run logs analysis commands."""
     package_dir = get_repo_root()
+
+    log_files = []
+    resolved_patterns = []
+
+    if command in ("list", "summary", "agents", "pipelines"):
+        resolved_patterns = resolve_log_patterns(patterns, search_dir=Path.cwd())
+        log_files = find_log_files(resolved_patterns)
+        if not log_files:
+            formatted = format_log_patterns(resolved_patterns)
+            if formatted:
+                print(f" No log files found matching patterns: {formatted}")
+            else:
+                print(" No log files found.")
+            return
     
     if command == "list":
-        import glob
-        
-        log_files = glob.glob(pattern)
-        if not log_files:
-            print(f" No log files found matching pattern: {pattern}")
-            return
-        
         print(f" Found {len(log_files)} log file(s):")
         for file in sorted(log_files):
             file_path = Path(file)
@@ -256,13 +415,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
             print(f"  • {file} ({size_mb:.2f} MB)")
     
     elif command == "summary":
-        import glob
         import json
-        
-        log_files = glob.glob(pattern)
-        if not log_files:
-            print(f" No log files found matching pattern: {pattern}")
-            return
         
         print(f" Summary for {len(log_files)} log file(s):")
         print("=" * 50)
@@ -313,13 +466,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
                 print(f"  • {agent}: {count:,} ({percentage:.1f}%)")
     
     elif command == "agents":
-        import glob
         import json
-        
-        log_files = glob.glob(pattern)
-        if not log_files:
-            print(f" No log files found matching pattern: {pattern}")
-            return
         
         print(f" Agents found in {len(log_files)} log file(s):")
         print("=" * 60)
@@ -396,13 +543,7 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
             print()
     
     elif command == "pipelines":
-        import glob
         import json
-        
-        log_files = glob.glob(pattern)
-        if not log_files:
-            print(f" No log files found matching pattern: {pattern}")
-            return
         
         print(f" Pipelines found in {len(log_files)} log file(s):")
         print("=" * 60)
@@ -491,21 +632,29 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
             print()
     
     elif command == "analyze":
-        # Determine which notebook to open
-        if notebook == "fraud":
-            notebook_file = package_dir / "fraud_detection_analysis.ipynb"
-            notebook_name = "Fraud Detection Analysis"
-        else:
-            notebook_file = package_dir / "agent_logs_analysis.ipynb"
-            notebook_name = "Agent Logs Analysis"
-        
-        if not notebook_file.exists():
-            print(f" Error: Notebook not found at {notebook_file}")
-            print(f"   Make sure you've run a demo first to generate log files.")
+        registry = WorkflowRegistry.load_default()
+        notebook_path = resolve_notebook_path(
+            notebook,
+            registry=registry,
+            repo_root=package_dir,
+        )
+
+        if not notebook_path:
+            if notebook:
+                print(f" Error: Notebook not found for '{notebook}'.")
+            else:
+                print(" Error: No analysis notebook found.")
+            sys.exit(1)
+
+        notebook_name = notebook_path.stem.replace("_", " ").title()
+
+        if not notebook_path.exists():
+            print(f" Error: Notebook not found at {notebook_path}")
+            print("   Make sure you've run a demo first to generate log files.")
             sys.exit(1)
         
         print(f" Opening {notebook_name}...")
-        print(f"   Notebook: {notebook_file}")
+        print(f"   Notebook: {notebook_path}")
         print(f"   Port: {port}")
         print("\n The Jupyter notebook will open in your browser.")
         print("   Press Ctrl+C to stop the server.\n")
@@ -519,12 +668,34 @@ def run_logs_command(command: str, pattern: str = "*_logs*.jsonl",
         
         # Launch Jupyter notebook
         result = subprocess.run(
-            ["jupyter", "notebook", str(notebook_file), "--port", str(port)],
-            cwd=str(package_dir)
+            ["jupyter", "notebook", str(notebook_path), "--port", str(port)],
+            cwd=str(notebook_path.parent)
         )
         
         sys.exit(result.returncode)
 
+
+def eval_main(args=None):
+    """Standalone entry point for eval command."""
+    if args is None:
+        parser = argparse.ArgumentParser(
+            description="Abide AgentKit Evaluation - Run agent demos and tests",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+
+        parser.add_argument("demo", choices=["weather", "fraud"],
+                           help="Which demo to run")
+        parser.add_argument("--transactions", type=int, default=25,
+                           help="Number of transactions (for fraud demo)")
+        parser.add_argument("--output-dir", default=".", help="Output directory")
+        parser.add_argument(
+            "--script-path",
+            help="Optional path to the demo script (overrides workflow config)"
+        )
+
+        args = parser.parse_args()
+
+    run_eval_demo(args.demo, args.transactions, args.output_dir, args.script_path)
 
 def logs_main():
     """Standalone entry point for logs command."""
@@ -535,10 +706,15 @@ def logs_main():
     
     parser.add_argument("command", choices=["analyze", "list", "summary", "agents", "pipelines"],
                        help="Command to run")
-    parser.add_argument("--pattern", default="*_logs*.jsonl",
-                       help="Pattern to match log files")
-    parser.add_argument("--notebook", choices=["agent", "fraud"], default="agent",
-                       help="Which notebook to open")
+    parser.add_argument(
+        "--pattern",
+        action="append",
+        help="Log file pattern(s). Can be repeated or comma-separated."
+    )
+    parser.add_argument(
+        "--notebook",
+        help="Workflow name or notebook path to open"
+    )
     parser.add_argument("--port", type=int, default=8888,
                        help="Port for Jupyter notebook")
     
@@ -569,7 +745,7 @@ Examples:
   abidex notebook fraud_detection
   
   # Run agent demos
-  abidex eval simple
+  abidex eval weather
   abidex eval fraud --transactions 50
 
 For more information, visit: https://github.com/abide-ai/agentkit
@@ -626,11 +802,15 @@ Examples:
   abidex eval fraud --transactions 100 --output-dir ./logs
         """
     )
-    eval_parser.add_argument("demo", choices=["simple", "weather", "fraud"], 
-                            help="Which demo to run: 'weather' (or 'simple') for weather agent logging, 'fraud' for fraud detection pipeline")
+    eval_parser.add_argument("demo", choices=["weather", "fraud"], 
+                            help="Which demo to run: 'weather' for weather agent logging, 'fraud' for fraud detection pipeline")
     eval_parser.add_argument("--transactions", type=int, default=25,
                             help="Number of transactions to process (for fraud demo)")
     eval_parser.add_argument("--output-dir", default=".", help="Directory to save log files")
+    eval_parser.add_argument(
+        "--script-path",
+        help="Optional path to the demo script (overrides workflow config)"
+    )
     
     # Workflows command
     workflows_parser = subparsers.add_parser(
@@ -660,9 +840,8 @@ Examples:
   # Show map for fraud detection workflow
   abidex map fraud_detection
   
-  # Show map for weather workflow (using alias)
+  # Show map for weather workflow
   abidex map weather
-  abidex map simple_agent  # alias also works
 
 This will show:
   - All agents in the workflow
@@ -671,7 +850,7 @@ This will show:
   - Event counts per agent
         """
     )
-    map_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
+    map_parser.add_argument("workflow", help="Workflow name (e.g., weather, fraud_detection)")
     
     # Logs command (workflow-specific)
     logs_parser = subparsers.add_parser(
@@ -692,7 +871,7 @@ This will show:
   - Total events in each log file
         """
     )
-    logs_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
+    logs_parser.add_argument("workflow", help="Workflow name (e.g., weather, fraud_detection)")
     
     # Notebook command
     notebook_parser = subparsers.add_parser(
@@ -713,7 +892,7 @@ This will:
   - Allow you to analyze telemetry data interactively
         """
     )
-    notebook_parser.add_argument("workflow", help="Workflow name (e.g., simple_agent, fraud_detection)")
+    notebook_parser.add_argument("workflow", help="Workflow name (e.g., weather, fraud_detection)")
     notebook_parser.add_argument("--port", type=int, default=8888,
                                 help="Port for Jupyter notebook server")
     

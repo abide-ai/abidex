@@ -5,35 +5,42 @@ OpenTelemetry-native observability SDK for AI agents, providing comprehensive te
 ## Installation
 
 ```bash
+<<<<<<< HEAD
+# Recommended: using uv (fast, creates environment automatically)
+uv install abidex
+
+# Using pip
+=======
 # Recommended: using uv (faster)
 uv add abidex
 
 # Or using pip
+>>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
 pip install abidex
 ```
 
 ### With Optional Dependencies
 
 ```bash
-# For Prometheus metrics
-pip install abidex[prometheus]
-# or with uv
-uv pip install "abidex[prometheus]"
+# Prometheus metrics
+uv install "abidex[prometheus]"
+# or
+pip install "abidex[prometheus]"
 
-# For Claude integration
-pip install abidex[claude]
-# or with uv
-uv pip install "abidex[claude]"
+# Claude integration
+uv install "abidex[claude]"
+# or
+pip install "abidex[claude]"
 
-# For CrewAI integration  
-pip install abidex[crew]
-# or with uv
-uv pip install "abidex[crew]"
+# CrewAI integration
+uv install "abidex[crew]"
+# or
+pip install "abidex[crew]"
 
 # All optional features
-pip install abidex[all]
-# or with uv
-uv pip install "abidex[all]"
+uv install "abidex[all]"
+# or
+pip install "abidex[all]"
 ```
 
 **Note**: The HTTP collector dependencies (FastAPI, uvicorn) are now included by default, so the collector command works out of the box.
