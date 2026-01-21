@@ -250,13 +250,36 @@ app = create_collector_app(
 )
 
 # Run with uvicorn
-uvicorn.run(app, host="0.0.0.0", port=8000)
+uvicorn.run(app, host="127.0.0.1", port=8000)
 ```
 
 Or use the CLI:
 
 ```bash
 abidex collector --port 8000 --auth-token your-secret-token
+```
+
+Configuration defaults can be set with environment variables or `abidex.json`:
+
+- `ABIDEX_COLLECTOR_HOST`, `ABIDEX_COLLECTOR_PORT`
+- `ABIDEX_OTLP_ENDPOINT`, `ABIDEX_OTLP_TRACES_ENDPOINT`, `ABIDEX_OTLP_METRICS_ENDPOINT`
+- `ABIDEX_OTLP_HEADERS` (comma-separated `key=value` pairs)
+
+Example `abidex.json`:
+
+```json
+{
+  "collector": {
+    "host": "127.0.0.1",
+    "port": 8000
+  },
+  "otel": {
+    "endpoint": "http://localhost:4318",
+    "headers": {
+      "api-key": "your-key"
+    }
+  }
+}
 ```
 
 ### Data Privacy and Redaction

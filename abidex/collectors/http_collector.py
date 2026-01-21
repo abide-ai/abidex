@@ -383,7 +383,7 @@ def create_collector_app(
         import uvicorn
         
         app = create_collector_app(auth_token="your-secret-token")
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        uvicorn.run(app, host="127.0.0.1", port=8000)
     """
     if not FASTAPI_AVAILABLE:
         raise ImportError("fastapi is required to create collector app")

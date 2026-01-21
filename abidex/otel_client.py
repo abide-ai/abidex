@@ -48,7 +48,9 @@ class TelemetryClient:
         sample_rate: float = 1.0,
         metadata: Optional[Dict[str, Any]] = None,
         default_tags: Optional[Dict[str, str]] = None,
-        enabled: bool = True
+        enabled: bool = True,
+        otlp_traces_endpoint: Optional[str] = None,
+        otlp_metrics_endpoint: Optional[str] = None
     ):
         """
         Initialize OpenTelemetry-based telemetry client.
@@ -57,8 +59,10 @@ class TelemetryClient:
             agent_id: Agent identifier
             service_name: Service name for OpenTelemetry resource
             service_version: Service version
-            otlp_endpoint: OTLP endpoint URL (e.g., "http://localhost:4318")
+            otlp_endpoint: Base OTLP endpoint URL (e.g., "http://localhost:4318")
             otlp_headers: Headers for OTLP export
+            otlp_traces_endpoint: Full OTLP traces endpoint URL (overrides base)
+            otlp_metrics_endpoint: Full OTLP metrics endpoint URL (overrides base)
             sample_rate: Sampling rate (0.0 to 1.0)
             metadata: Additional metadata
             default_tags: Default tags/attributes
@@ -83,13 +87,23 @@ class TelemetryClient:
         # Initialize TracerProvider
         self.tracer_provider = TracerProvider(resource=resource)
         
+        from .config import resolve_otlp_settings
+
+        otlp_settings = resolve_otlp_settings(
+            otlp_endpoint=otlp_endpoint,
+            otlp_headers=otlp_headers,
+            otlp_traces_endpoint=otlp_traces_endpoint,
+            otlp_metrics_endpoint=otlp_metrics_endpoint,
+        )
+        otlp_headers = otlp_settings.headers or {}
+
         # Set up span exporters
         # Use SimpleSpanProcessor for console (no background threads) to avoid hanging
         # Use BatchSpanProcessor for OTLP (better performance with batching)
-        if otlp_endpoint:
+        if otlp_settings.traces_endpoint:
             span_exporter = OTLPSpanExporter(
-                endpoint=otlp_endpoint + "/v1/traces",
-                headers=otlp_headers or {}
+                endpoint=otlp_settings.traces_endpoint,
+                headers=otlp_headers
             )
             # Store reference to span processor for proper shutdown
             self.span_processor = BatchSpanProcessor(span_exporter)
@@ -113,10 +127,10 @@ class TelemetryClient:
         # For console mode, don't use PeriodicExportingMetricReader to avoid background threads
         # Metrics can still be recorded but won't be exported (prevents hanging)
         metric_readers = []
-        if otlp_endpoint:
+        if otlp_settings.metrics_endpoint:
             metric_exporter = OTLPMetricExporter(
-                endpoint=otlp_endpoint + "/v1/metrics",
-                headers=otlp_headers or {}
+                endpoint=otlp_settings.metrics_endpoint,
+                headers=otlp_headers
             )
             metric_reader = PeriodicExportingMetricReader(metric_exporter)
             metric_readers.append(metric_reader)

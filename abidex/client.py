@@ -343,7 +343,9 @@ class TelemetryClient(BaseTelemetryClient):
         otlp_endpoint: Optional[str] = None,
         otlp_headers: Optional[Dict[str, str]] = None,
         service_name: Optional[str] = None,
-        service_version: Optional[str] = None
+        service_version: Optional[str] = None,
+        otlp_traces_endpoint: Optional[str] = None,
+        otlp_metrics_endpoint: Optional[str] = None
     ):
         # Initialize base class with OpenTelemetry setup
         super().__init__(
@@ -352,6 +354,8 @@ class TelemetryClient(BaseTelemetryClient):
             service_version=service_version,
             otlp_endpoint=otlp_endpoint,
             otlp_headers=otlp_headers,
+            otlp_traces_endpoint=otlp_traces_endpoint,
+            otlp_metrics_endpoint=otlp_metrics_endpoint,
             sample_rate=sample_rate,
             metadata=metadata,
             default_tags=default_tags,

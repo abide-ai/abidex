@@ -18,6 +18,7 @@ except ImportError:
     COLLECTOR_AVAILABLE = False
 
 from .client import TelemetryClient
+from .config import resolve_collector_settings
 from .sinks import JSONLSink, HTTPSink
 
 
@@ -41,15 +42,15 @@ def collector_main(args=None):
 
         parser.add_argument(
             "--host",
-            default="0.0.0.0",
-            help="Host to bind the collector to"
+            default=None,
+            help="Host to bind the collector to (default: 127.0.0.1 or ABIDEX_COLLECTOR_HOST/config)"
         )
 
         parser.add_argument(
             "--port",
             type=int,
-            default=8000,
-            help="Port to bind the collector to"
+            default=None,
+            help="Port to bind the collector to (default: 8000 or ABIDEX_COLLECTOR_PORT/config)"
         )
 
         parser.add_argument(
@@ -99,6 +100,10 @@ def collector_main(args=None):
     if not UVICORN_AVAILABLE:
         print("Error: uvicorn is required to run the collector. Install with: pip install abidex[collector]")
         sys.exit(1)
+
+    defaults = resolve_collector_settings(args.host, args.port)
+    args.host = defaults.host
+    args.port = defaults.port
 
     # Set up telemetry client with optional sinks
     client = TelemetryClient()
