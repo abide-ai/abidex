@@ -6,6 +6,65 @@ from ..cli_common import get_repo_root
 from .registry import WorkflowRegistry, WorkflowDescription
 
 
+def get_workflow_log_dir(project_name: str, output_dir: str = ".") -> Path:
+    """
+    Get the log directory for a workflow project.
+    
+    Logs are saved to: {output_dir}/logs/{project_name}/
+    
+    Args:
+        project_name: Name of the project/workflow (e.g., "fraud_detection", "simple_weather")
+        output_dir: Base output directory (default: current directory)
+    
+    Returns:
+        Path to the log directory
+    """
+    log_dir = Path(output_dir) / "logs" / project_name
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+def get_workflow_dir(project_name: str, base_dir: str = ".") -> Path:
+    """
+    Get the workflow directory for a workflow project.
+    
+    Workflow files (scripts, notebooks, configs) are saved to: {base_dir}/workflows/{project_name}/
+    
+    Args:
+        project_name: Name of the project/workflow
+        base_dir: Base directory (default: current directory)
+    
+    Returns:
+        Path to the workflow directory
+    """
+    workflow_dir = Path(base_dir) / "workflows" / project_name
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    return workflow_dir
+
+
+def resolve_workflow_log_path(
+    project_name: str,
+    log_filename: str,
+    output_dir: Optional[str] = None
+) -> Path:
+    """
+    Resolve the full path for a workflow log file.
+    
+    Args:
+        project_name: Name of the project/workflow
+        log_filename: Name of the log file (e.g., "fraud_detection_logs_20240101.jsonl")
+        output_dir: Optional output directory (defaults to current directory or from env)
+    
+    Returns:
+        Full path to the log file
+    """
+    if output_dir is None:
+        output_dir = os.environ.get("ABIDEX_OUTPUT_DIR", ".")
+    
+    log_dir = get_workflow_log_dir(project_name, output_dir)
+    return log_dir / log_filename
+
+
 SCRIPT_PATTERNS = (
     "{name}.py",
     "{name}_pipeline.py",
@@ -147,6 +206,14 @@ def _resolve_path(path_value: str, search_dirs: Sequence[Path]) -> Optional[Path
 def _default_search_dirs(repo_root: Path, include_notebooks: bool = False) -> List[Path]:
     """Return the ordered list of directories to search."""
     dirs = [repo_root, repo_root / "examples"]
+    
+    # Add workflows/*/ subdirectories for workflow-specific files
+    workflows_base = repo_root / "workflows"
+    if workflows_base.exists():
+        for workflow_dir in workflows_base.iterdir():
+            if workflow_dir.is_dir():
+                dirs.append(workflow_dir)
+    
     if include_notebooks:
         dirs.extend(
             [
@@ -154,6 +221,12 @@ def _default_search_dirs(repo_root: Path, include_notebooks: bool = False) -> Li
                 repo_root / "examples" / "notebooks",
             ]
         )
+        # Also check workflows/*/ for notebooks
+        if workflows_base.exists():
+            for workflow_dir in workflows_base.iterdir():
+                if workflow_dir.is_dir():
+                    dirs.append(workflow_dir)
+    
     return dirs
 
 
