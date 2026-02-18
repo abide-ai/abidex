@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from abidex import AgentRun, TelemetryClient
 from abidex.sinks import JSONLSink
+from abidex.workflows.paths import resolve_workflow_log_path
 
 
 def run_weather_logging_demo():
@@ -30,7 +31,12 @@ def run_weather_logging_demo():
         },
     )
 
-    log_file = f"weather_agent_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    # Get project name from environment
+    project_name = os.environ.get("ABIDEX_PROJECT_NAME", "simple_weather")
+    
+    # Resolve log file path using utility function
+    log_filename = f"weather_agent_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    log_file = str(resolve_workflow_log_path(project_name, log_filename))
     client.add_sink(JSONLSink(log_file))
 
     print(f" Logs will be saved to: {log_file}")

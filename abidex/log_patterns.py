@@ -145,13 +145,23 @@ def find_log_files(
     seen = set()
     matches: List[str] = []
 
+    # Also search in logs/*/ subdirectories for discovered workflows
+    search_dirs = [search_dir]
+    logs_dir = search_dir / "logs"
+    if logs_dir.exists():
+        # Add all project subdirectories under logs/
+        for project_dir in logs_dir.iterdir():
+            if project_dir.is_dir():
+                search_dirs.append(project_dir)
+
     for pattern in normalize_log_patterns(patterns):
-        for path in _iter_pattern_matches(pattern, search_dir):
-            path_str = str(path)
-            if path_str in seen:
-                continue
-            seen.add(path_str)
-            matches.append(path_str)
+        for base_dir in search_dirs:
+            for path in _iter_pattern_matches(pattern, base_dir):
+                path_str = str(path)
+                if path_str in seen:
+                    continue
+                seen.add(path_str)
+                matches.append(path_str)
 
     return matches
 
