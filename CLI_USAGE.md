@@ -39,7 +39,7 @@ abidex eval custom_demo --script-path ./examples/custom_demo.py
 
 ### Workflow Configuration
 
-Workflow-aware commands (like `eval`, `notebook`, and `logs analyze`) are driven by
+Workflow-aware commands (like `eval`, `notebook`, and `abidex-logs analyze`) are driven by
 configured workflows. Define them in one of the following locations:
 
 - `workflows.json` or `.abidex_workflows.json` in the repo root or current directory
@@ -49,43 +49,52 @@ configured workflows. Define them in one of the following locations:
 Each workflow entry should include `id`, `display_name`, `script`, `notebook`, and
 `log_patterns` (or `log_pattern`), plus optional `aliases`.
 
-### `abidex logs` - Analyze Telemetry Logs
+### `abidex logs` - View Workflow Logs
+
+Show telemetry logs for a specific workflow:
+
+```bash
+# View logs for fraud detection workflow
+abidex logs fraud_detection
+```
+
+### `abidex-logs` - Analyze Telemetry Logs
 
 Analyze and visualize telemetry data from agent runs:
 
 ```bash
 # List all log files
-abidex logs list
+abidex-logs list
 
 # List fraud detection logs
-abidex logs list --pattern "fraud_detection_logs*.jsonl"
+abidex-logs list --pattern "fraud_detection_logs*.jsonl"
 
 # Get quick summary of logs
-abidex logs summary
+abidex-logs summary
 
 # Get summary of specific pattern
-abidex logs summary --pattern "weather_agent_logs*.jsonl"
+abidex-logs summary --pattern "simple_agent_logs*.jsonl"
 
 # List all agents found in logs
-abidex logs agents
+abidex-logs agents
 
 # List all agents from fraud detection logs
-abidex logs agents --pattern "fraud_detection_logs*.jsonl"
+abidex-logs agents --pattern "fraud_detection_logs*.jsonl"
 
 # List all pipelines found in logs
-abidex logs pipelines
+abidex-logs pipelines
 
 # List pipelines from specific pattern
-abidex logs pipelines --pattern "*agent_logs*.jsonl"
+abidex-logs pipelines --pattern "*agent_logs*.jsonl"
 
 # Open Jupyter notebook for analysis
-abidex logs analyze
+abidex-logs analyze
 
 # Open fraud detection analysis notebook
-abidex logs analyze --notebook fraud
+abidex-logs analyze --notebook fraud
 
 # Open notebook on custom port
-abidex logs analyze --port 9999
+abidex-logs analyze --port 9999
 ```
 
 **Subcommands:**
@@ -117,13 +126,13 @@ abidex collector --port 8000
 abidex eval fraud --transactions 30
 
 # 2. Check what logs were generated
-abidex logs list
+abidex-logs list
 
 # 3. Get a quick summary
-abidex logs summary --pattern "fraud_detection_logs*.jsonl"
+abidex-logs summary --pattern "fraud_detection_logs*.jsonl"
 
 # 4. Open the analysis notebook
-abidex logs analyze --notebook fraud
+abidex-logs analyze --notebook fraud
 ```
 
 ### Quick Test
@@ -133,14 +142,14 @@ abidex logs analyze --notebook fraud
 abidex eval weather
 
 # View the logs
-abidex logs list
-abidex logs summary
+abidex-logs list
+abidex-logs summary
 ```
 
 ## What Gets Generated
 
 ### Weather Demo (`eval weather`)
-- Generates: `weather_agent_logs_YYYYMMDD_HHMMSS.jsonl`
+- Generates: `simple_agent_logs_YYYYMMDD_HHMMSS.jsonl`
 - Shows: Weather agent logging, model calls, metrics, errors
 
 ### Fraud Detection Demo (`eval fraud`)
@@ -153,7 +162,7 @@ abidex logs summary
 
 ## Analysis Notebooks
 
-The `logs analyze` command opens Jupyter notebooks that provide:
+The `abidex-logs analyze` command opens Jupyter notebooks that provide:
 
 - **Workflow-specific analysis** (`--notebook <workflow>`):
   - Uses the notebook path defined in your workflow config

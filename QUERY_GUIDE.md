@@ -8,13 +8,13 @@ Quick reference for discovering and querying agents and pipelines in your teleme
 
 ```bash
 # List all agents from all log files
-abidex logs agents
+abidex-logs agents
 
 # List agents from specific log pattern
-abidex logs agents --pattern "fraud_detection_logs*.jsonl"
+abidex-logs agents --pattern "fraud_detection_logs*.jsonl"
 
 # List agents from weather agent logs
-abidex logs agents --pattern "weather_agent_logs*.jsonl"
+abidex-logs agents --pattern "simple_agent_logs*.jsonl"
 ```
 
 **Output includes:**
@@ -29,10 +29,10 @@ abidex logs agents --pattern "weather_agent_logs*.jsonl"
 
 ```bash
 # List all pipelines from all log files
-abidex logs pipelines
+abidex-logs pipelines
 
 # List pipelines from specific pattern
-abidex logs pipelines --pattern "fraud_detection_logs*.jsonl"
+abidex-logs pipelines --pattern "fraud_detection_logs*.jsonl"
 ```
 
 **Output includes:**

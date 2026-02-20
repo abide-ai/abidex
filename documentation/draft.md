@@ -34,8 +34,8 @@ The AbideX CLI provides commands for running evaluations, discovering workflows,
 **When to run**: First step - run this to see what workflows are available.
 
 **What it does**:
-- Scans your codebase for workflow definitions
-- Registers workflows in the `WORKFLOW_REGISTRY`
+- Loads configured workflows from registry config
+- Enriches workflows with log discovery when available
 - Displays available workflows with their metadata
 
 **Example**:
@@ -43,21 +43,21 @@ The AbideX CLI provides commands for running evaluations, discovering workflows,
 abidex workflows
 # Output:
 # Available workflows:
-#   - simple_agent_test
-#   - fraud_detection_pipeline
+#   - weather
+#   - fraud_detection
 ```
 
 **Execution Flow**:
 ```
 abidex workflows
     │
-    ├─→ Scan codebase for workflow files
-    ├─→ Parse workflow definitions
-    ├─→ Register in WORKFLOW_REGISTRY
+    ├─→ Load workflow registry config
+    ├─→ Discover log files for configured workflows
+    ├─→ Auto-discover workflows from log patterns
     └─→ Display list of workflows
 ```
 
-#### 2. `abidex workflows map` - Visualize Workflow Structure
+#### 2. `abidex map` - Visualize Workflow Structure
 **Purpose**: Shows a visual map/diagram of workflow structure.
 
 **When to run**: After discovering workflows, to understand their structure.
@@ -69,12 +69,12 @@ abidex workflows
 
 **Example**:
 ```bash
-abidex workflows map simple_agent_test
+abidex map weather
 ```
 
 **Execution Flow**:
 ```
-abidex workflows map <workflow_name>
+abidex map <workflow_name>
     │
     ├─→ Load workflow from registry
     ├─→ Parse workflow structure
@@ -82,7 +82,7 @@ abidex workflows map <workflow_name>
     └─→ Display workflow map
 ```
 
-#### 3. `abidex evals` (or `abidex eval`) - Run Evaluations
+#### 3. `abidex eval` - Run Evaluations
 **Purpose**: Executes evaluation scripts/workflows with telemetry collection.
 
 **When to run**: After discovering workflows, to actually run them and collect telemetry.
@@ -95,14 +95,14 @@ abidex workflows map <workflow_name>
 
 **Example**:
 ```bash
-abidex evals simple_agent_test
+abidex eval weather
 # or
-abidex eval fraud_detection_pipeline
+abidex eval fraud_detection
 ```
 
 **Execution Flow**:
 ```
-abidex evals <workflow_name>
+abidex eval <workflow_name>
     │
     ├─→ Load workflow from registry
     ├─→ Initialize TelemetryClient
@@ -133,7 +133,7 @@ abidex evals <workflow_name>
 **Purpose**: Starts a FastAPI server to receive telemetry events from remote agents.
 
 **When to run**: 
-- **Before** running evals if you want centralized telemetry collection
+- **Before** running eval if you want centralized telemetry collection
 - In a separate terminal/process for production deployments
 
 **What it does**:
@@ -147,8 +147,8 @@ abidex evals <workflow_name>
 # Terminal 1: Start collector
 abidex collector --port 8000
 
-# Terminal 2: Run evals (they'll send to collector)
-abidex evals simple_agent_test --collector-url http://localhost:8000
+# Terminal 2: Run eval
+abidex eval weather
 ```
 
 **Execution Flow**:
@@ -164,10 +164,10 @@ abidex collector
     └─→ Listen for incoming events
 ```
 
-#### 5. `abidex workflows logs` - View Telemetry Logs
+#### 5. `abidex logs` - View Telemetry Logs
 **Purpose**: Displays telemetry logs from JSONL files.
 
-**When to run**: After running evals, to view collected telemetry.
+**When to run**: After running eval, to view collected telemetry.
 
 **What it does**:
 - Reads JSONL files from default location
@@ -176,13 +176,12 @@ abidex collector
 
 **Example**:
 ```bash
-abidex workflows logs simple_agent_test
-abidex workflows logs --run-id run-123
+abidex logs weather
 ```
 
 **Execution Flow**:
 ```
-abidex workflows logs [options]
+abidex logs <workflow_name>
     │
     ├─→ Find JSONL files
     ├─→ Parse events
@@ -202,7 +201,7 @@ abidex workflows logs [options]
 
 **Example**:
 ```bash
-abidex notebook simple_agent_test
+abidex notebook weather
 # Opens: agent_logs_analysis.ipynb or fraud_detection_analysis.ipynb
 ```
 
@@ -225,21 +224,21 @@ abidex notebook <workflow_name>
 abidex workflows
 
 # Step 2: Understand workflow structure (optional)
-abidex workflows map simple_agent_test
+abidex map weather
 
 # Step 3: Run evaluation (telemetry written to local JSONL files)
-abidex evals simple_agent_test
+abidex eval weather
 
 # Step 4: View logs
-abidex workflows logs simple_agent_test
+abidex logs weather
 
 # Step 5: Analyze in notebook
-abidex notebook simple_agent_test
+abidex notebook weather
 ```
 
 **Data Flow**:
 ```
-abidex evals
+abidex eval
     │
     └─→ TelemetryClient
         │
@@ -253,43 +252,36 @@ abidex evals
 # Terminal 1: Start collector server
 abidex collector --port 8000 --auth-token my-secret-token
 
-# Terminal 2: Run evaluations (send to collector)
-abidex evals simple_agent_test \
-    --collector-url http://localhost:8000 \
-    --collector-token my-secret-token
+# Terminal 2: Run evaluations (configure telemetry sinks in code or env)
+abidex eval weather
 
-# Terminal 3: View collected logs
-abidex workflows logs --collector-url http://localhost:8000
+# Terminal 3: View collected logs (if writing JSONL locally)
+abidex logs weather
 ```
 
 **Data Flow**:
 ```
-abidex evals
+abidex eval
     │
     └─→ TelemetryClient
         │
-        ├─→ HTTPSink → POST /events/batch → Collector Server
-        │   └─→ Collector → Forward to backends (Jaeger, Datadog, etc.)
-        └─→ JSONLSink → agent_logs.jsonl (backup/local)
+        ├─→ HTTPSink → Collector Server (if configured)
+        └─→ JSONLSink → agent_logs.jsonl (optional/local)
 ```
 
 #### Sequence 3: OTLP Export (Production Monitoring)
 
 ```bash
-# Run with OTLP endpoint (e.g., Jaeger, Datadog)
-abidex evals simple_agent_test \
-    --otlp-endpoint http://jaeger:4317 \
-    --otlp-headers "api-key=your-key"
+# Run with OTLP exporter configured in code or environment
+abidex eval weather
 ```
 
 **Data Flow**:
 ```
-abidex evals
+abidex eval
     │
     └─→ TelemetryClient
-        │
-        └─→ OTLPSpanExporter → Jaeger/Datadog/Backend
-            └─→ BatchSpanProcessor (background thread)
+        └─→ OTLPSpanExporter → Jaeger/Datadog/Backend (if configured)
 ```
 
 ### Command Dependencies & Order
@@ -302,7 +294,7 @@ abidex evals
                    │
                    ▼
 ┌─────────────────────────────────────────────────────────┐
-│ 2. abidex workflows map [optional]                     │
+│ 2. abidex map [optional]                               │
 │    (Visualizes workflow - depends on #1)                │
 └──────────────────┬──────────────────────────────────────┘
                    │
@@ -314,7 +306,7 @@ abidex evals
                    │
                    ▼
 ┌─────────────────────────────────────────────────────────┐
-│ 3b. abidex evals <workflow>                            │
+│ 3b. abidex eval <workflow>                             │
 │     (Runs workflow - depends on #1, optionally #3a)   │
 │     - Creates telemetry data                            │
 │     - Writes to JSONL files                            │
@@ -323,7 +315,7 @@ abidex evals
                    │
                    ▼
 ┌─────────────────────────────────────────────────────────┐
-│ 4. abidex workflows logs [optional]                    │
+│ 4. abidex logs <workflow> [optional]                   │
 │    (Views logs - depends on #3b)                        │
 └──────────────────┬──────────────────────────────────────┘
                    │
@@ -337,25 +329,25 @@ abidex evals
 ### Key Points
 
 1. **`abidex workflows` is typically first** - You need to discover workflows before running them
-2. **`abidex evals` is the main execution command** - This is where telemetry collection happens
+2. **`abidex eval` is the main execution command** - This is where telemetry collection happens
 3. **`abidex collector` is optional** - Only needed for centralized collection
-4. **Order matters**: Workflows → Evals → Logs/Notebook
-5. **Collector can run independently** - Start it before or after workflows discovery, but before evals if you want centralized collection
+4. **Order matters**: Workflows → Eval → Logs/Notebook
+5. **Collector can run independently** - Start it before or after workflows discovery, but before eval if you want centralized collection
 
 ### Configuration Options
 
-**For `abidex evals`**:
+**For `abidex eval`**:
+- `--transactions`: Number of transactions (fraud demo only)
 - `--output-dir`: Where to write JSONL files
-- `--collector-url`: HTTP collector endpoint
-- `--otlp-endpoint`: OTLP backend endpoint
-- `--sample-rate`: Sampling rate (0.0-1.0)
-- `--no-console`: Disable console output
+- `--script-path`: Override workflow script path
 
 **For `abidex collector`**:
 - `--port`: Server port (default: 8000)
 - `--auth-token`: Authentication token
-- `--cors`: Enable CORS
+- `--cors-origins`: Allowed CORS origins
 - `--host`: Bind address
+- `--output-file`: JSONL output sink
+- `--forward-url`: Forward events to another HTTP endpoint
 
 ---
 
@@ -377,59 +369,59 @@ pip install -e .
 Run demo scenarios to test agent logging and telemetry:
 
 ```bash
-# Run simple agent logging demo
-abidex eval simple
+# Run weather agent logging demo
+abidex eval weather
 
 # Run fraud detection pipeline demo
-abidex eval fraud
+abidex eval fraud_detection
 
 # Run fraud detection with custom transaction count
-abidex eval fraud --transactions 50
+abidex eval fraud_detection --transactions 50
 ```
 
 **Options:**
-- `simple` - Basic agent logging demonstration
-- `fraud` - Complete fraud detection pipeline with 3 agents
+- `WORKFLOW` - Workflow ID or alias from your workflow config
 - `--transactions N` - Number of transactions to process (default: 25, fraud demo only)
 - `--output-dir DIR` - Directory to save log files (default: current directory)
+- `--script-path PATH` - Override workflow script path
 
-#### `abidex logs` - Analyze Telemetry Logs
+#### `abidex-logs` - Analyze Telemetry Logs
 
 Analyze and visualize telemetry data from agent runs:
 
 ```bash
 # List all log files
-abidex logs list
+abidex-logs list
 
 # List fraud detection logs
-abidex logs list --pattern "fraud_detection_logs*.jsonl"
+abidex-logs list --pattern "fraud_detection_logs*.jsonl"
 
 # Get quick summary of logs
-abidex logs summary
+abidex-logs summary
 
 # Get summary of specific pattern
-abidex logs summary --pattern "simple_agent_logs*.jsonl"
+abidex-logs summary --pattern "simple_agent_logs*.jsonl"
 
 # List all agents found in logs
-abidex logs agents
+abidex-logs agents
 
 # List all agents from fraud detection logs
-abidex logs agents --pattern "fraud_detection_logs*.jsonl"
+abidex-logs agents --pattern "fraud_detection_logs*.jsonl"
 
 # List all pipelines found in logs
-abidex logs pipelines
+abidex-logs pipelines
 
 # List pipelines from specific pattern
-abidex logs pipelines --pattern "*agent_logs*.jsonl"
+abidex-logs pipelines --pattern "*agent_logs*.jsonl"
 
 # Open Jupyter notebook for analysis
-abidex logs analyze
+abidex-logs analyze
 
 # Open fraud detection analysis notebook
-abidex logs analyze --notebook fraud
+abidex-logs analyze --notebook fraud
 
 # Open notebook on custom port
-abidex logs analyze --port 9999
+abidex-logs analyze --port 9999
 ```
 
 **Subcommands:**
@@ -441,7 +433,7 @@ abidex logs analyze --port 9999
 
 **Options:**
 - `--pattern PATTERN` - Glob pattern to match log files (default: `*agent_logs*.jsonl`)
-- `--notebook {agent,fraud}` - Which notebook to open (default: `agent`)
+- `--notebook WORKFLOW_OR_PATH` - Workflow name or notebook path (defaults to first available)
 - `--port PORT` - Port for Jupyter notebook server (default: 8888)
 
 #### `abidex collector` - Start Telemetry Collector
@@ -458,36 +450,36 @@ abidex collector --port 8000
 
 ```bash
 # 1. Run the fraud detection demo
-abidex eval fraud --transactions 30
+abidex eval fraud_detection --transactions 30
 
 # 2. Check what logs were generated
-abidex logs list
+abidex-logs list
 
 # 3. Get a quick summary
-abidex logs summary --pattern "fraud_detection_logs*.jsonl"
+abidex-logs summary --pattern "fraud_detection_logs*.jsonl"
 
 # 4. Open the analysis notebook
-abidex logs analyze --notebook fraud
+abidex-logs analyze --notebook fraud
 ```
 
 #### Example 2: Quick Test
 
 ```bash
-# Run simple demo
-abidex eval simple
+# Run weather demo
+abidex eval weather
 
 # View the logs
-abidex logs list
-abidex logs summary
+abidex-logs list
+abidex-logs summary
 ```
 
 ### What Gets Generated
 
-#### Simple Demo (`eval simple`)
+#### Weather Demo (`eval weather`)
 - Generates: `simple_agent_logs_YYYYMMDD_HHMMSS.jsonl`
 - Shows: Basic agent logging, model calls, metrics, errors
 
-#### Fraud Detection Demo (`eval fraud`)
+#### Fraud Detection Demo (`eval fraud_detection`)
 - Generates: `fraud_detection_logs_YYYYMMDD_HHMMSS.jsonl`
 - Shows: Complete 3-agent pipeline with:
   - Agent thinking, actions, decisions, observations
@@ -497,20 +489,12 @@ abidex logs summary
 
 ### Analysis Notebooks
 
-The `logs analyze` command opens Jupyter notebooks that provide:
+The `abidex-logs analyze` command opens Jupyter notebooks that provide:
 
-- **Agent Logs Analysis** (`--notebook agent`):
-  - General agent telemetry analysis
-  - Event type distributions
-  - Performance metrics
-  - Time series analysis
-
-- **Fraud Detection Analysis** (`--notebook fraud`):
-  - Specialized fraud detection metrics
-  - Agent behavior analysis (thinking, actions, decisions)
-  - Risk assessment patterns
-  - Decision reasoning quality
-  - OpenTelemetry-style comprehensive metrics
+- **Workflow-specific analysis** (`--notebook <workflow>`):
+  - Uses the notebook path defined in your workflow config
+  - Falls back to the first available notebook if `--notebook` is omitted
+  - You can also pass a direct notebook file path
 
 ### Requirements
 
@@ -526,7 +510,7 @@ The `logs analyze` command opens Jupyter notebooks that provide:
 pip install -e .
 
 # Or use Python module syntax
-python -m abidex.cli eval simple
+python -m abidex.cli eval weather
 ```
 
 **Notebook not found:**
@@ -551,13 +535,13 @@ This section provides a quick reference for discovering and querying agents and 
 
 ```bash
 # List all agents from all log files
-abidex logs agents
+abidex-logs agents
 
 # List agents from specific log pattern
-abidex logs agents --pattern "fraud_detection_logs*.jsonl"
+abidex-logs agents --pattern "fraud_detection_logs*.jsonl"
 
 # List agents from simple agent logs
-abidex logs agents --pattern "simple_agent_logs*.jsonl"
+abidex-logs agents --pattern "simple_agent_logs*.jsonl"
 ```
 
 **Output includes:**
@@ -572,10 +556,10 @@ abidex logs agents --pattern "simple_agent_logs*.jsonl"
 
 ```bash
 # List all pipelines from all log files
-abidex logs pipelines
+abidex-logs pipelines
 
 # List pipelines from specific pattern
-abidex logs pipelines --pattern "fraud_detection_logs*.jsonl"
+abidex-logs pipelines --pattern "fraud_detection_logs*.jsonl"
 ```
 
 **Output includes:**
@@ -769,7 +753,7 @@ print(pipeline_stats)
 ┌─────────────────────────────────────────────────────────────┐
 │                    Your AI Agent Code                         │
 │  (Python scripts, Jupyter notebooks, production services)    │
-│  Files: simple_agent_test.py, fraud_detection_pipeline.py    │
+│  Files: test_agent_logging.py, fraud_detection_pipeline.py   │
 └──────────────────────┬────────────────────────────────────────┘
                        │
                        ▼
@@ -2298,7 +2282,7 @@ Quick reference for finding where each component is implemented:
 | **ID Utils** | `abidex/utils/id_utils.py` | ID generation functions |
 | **CLI** | `abidex/cli.py` | `main()`, `run_eval_demo()`, `collector_main()` |
 | **Public API** | `abidex/__init__.py` | Exports and re-exports |
-| **Demo Scripts** | `simple_agent_test.py`, `fraud_detection_pipeline.py` | Demo implementations |
+| **Demo Scripts** | `test_agent_logging.py`, `fraud_detection_pipeline.py` | Demo implementations |
 | **Analysis Notebooks** | `agent_logs_analysis.ipynb`, `fraud_detection_analysis.ipynb` | Analysis examples |
 
 ---

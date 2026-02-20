@@ -77,7 +77,7 @@ graph TB
     subgraph Eval[" "]
         D2 --> F1["run_eval_demo"]
         F1 --> F2{"Demo Type?"}
-        F2 -->|simple| F3["simple_agent_test.py"]
+        F2 -->|weather| F3["test_agent_logging.py"]
         F2 -->|fraud| F4["fraud_detection_pipeline.py"]
         F3 --> F5["Generate Logs"]
         F4 --> F5
@@ -508,7 +508,7 @@ Project Root/
 │   ├── cli.py (main entry point)
 │   ├── client.py
 │   └── ...
-├── simple_agent_test.py (demo script)
+├── test_agent_logging.py (demo script)
 ├── fraud_detection_pipeline.py (demo script)
 ├── simple_agent_logs_*.jsonl (generated logs)
 ├── fraud_detection_logs_*.jsonl (generated logs)
@@ -557,7 +557,7 @@ graph TD
 - `WORKFLOW_REGISTRY`: Workflow definitions
 - Log file patterns: `"*_logs*.jsonl"`
 - Default ports: `8000` (collector), `8888` (notebook)
-- Script paths: `simple_agent_test.py`, `fraud_detection_pipeline.py`
+- Script paths: `test_agent_logging.py`, `fraud_detection_pipeline.py`
 - Notebook paths: `agent_logs_analysis.ipynb`, `fraud_detection_analysis.ipynb`
 
 ### Configurable (Future)

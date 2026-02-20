@@ -5,17 +5,10 @@ OpenTelemetry-native observability SDK for AI agents, providing comprehensive te
 ## Installation
 
 ```bash
-<<<<<<< HEAD
-# Recommended: using uv (fast, creates environment automatically)
-uv install abidex
-
-# Using pip
-=======
 # Recommended: using uv (faster)
 uv add abidex
 
 # Or using pip
->>>>>>> d1ff0baefb0f84aa5d7a7d3d665698bc0d47872e
 pip install abidex
 ```
 
@@ -51,7 +44,6 @@ Use the CLI to run demos, explore workflows, and analyze logs:
 
 ```bash
 # Run demos
-abidex eval simple
 abidex eval weather
 abidex eval fraud --transactions 50
 
