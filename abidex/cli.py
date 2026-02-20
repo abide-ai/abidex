@@ -245,6 +245,18 @@ def run_eval_demo(
 
     env = os.environ.copy()
     env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+    
+    # Pass output_dir to demo scripts via environment variable
+    env["ABIDEX_OUTPUT_DIR"] = output_dir
+    
+    # Map demo names to project names for log directory structure
+    project_name_map = {
+        "weather": "simple_weather",
+        "fraud": "fraud_detection",
+        "fraud_detection": "fraud_detection",
+    }
+    project_name = project_name_map.get(demo, demo)
+    env["ABIDEX_PROJECT_NAME"] = project_name
 
     if demo in ("fraud", "fraud_detection"):
         env["FRAUD_DEMO_TRANSACTIONS"] = str(transactions)

@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from abidex import TelemetryClient, AgentRun, get_agent_logger, get_logger
 from abidex.sinks import JSONLSink
+from abidex.workflows.paths import resolve_workflow_log_path
 
 
 # Data Models
@@ -546,7 +547,12 @@ class FraudDetectionPipeline:
         )
         
         # Add comprehensive logging
-        log_file = f"fraud_detection_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+        # Get project name from environment
+        project_name = os.environ.get("ABIDEX_PROJECT_NAME", "fraud_detection")
+        
+        # Resolve log file path using utility function
+        log_filename = f"fraud_detection_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+        log_file = str(resolve_workflow_log_path(project_name, log_filename))
         self.client.add_sink(JSONLSink(log_file))
         
         # Initialize agents
