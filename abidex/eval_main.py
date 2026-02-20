@@ -6,9 +6,15 @@ import argparse
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Optional
 
 from .cli_common import get_repo_root
+from .workflows.cli_helpers import (
+    format_workflow_choices,
+    get_configured_workflows,
+    resolve_eval_target,
+)
 from .workflows.paths import resolve_workflow_script_path
 from .workflows.registry import WorkflowRegistry
 
@@ -76,8 +82,10 @@ def eval_main(args=None):
             formatter_class=argparse.ArgumentDefaultsHelpFormatter
         )
 
-        parser.add_argument("demo", choices=["simple", "weather", "fraud"],
-                           help="Which demo to run")
+        parser.add_argument(
+            "demo",
+            help="Workflow ID or alias (from workflows.json or ABIDEX_WORKFLOW_DIR)"
+        )
         parser.add_argument("--transactions", type=int, default=25,
                            help="Number of transactions (for fraud demo)")
         parser.add_argument("--output-dir", default=".", help="Output directory")
@@ -87,5 +95,43 @@ def eval_main(args=None):
         )
 
         args = parser.parse_args()
+
+    registry = WorkflowRegistry.load_default()
+    repo_root = get_repo_root()
+    resolution = resolve_eval_target(
+        args.demo,
+        args.script_path,
+        registry=registry,
+        repo_root=repo_root,
+    )
+
+    if resolution.used_script_override:
+        if not resolution.script_path:
+            print(f"Error: Demo script not found at {args.script_path}")
+            sys.exit(1)
+    else:
+        if not resolution.script_path:
+            if resolution.workflow is None:
+                print(f"Error: Workflow '{args.demo}' not found.")
+            else:
+                print(f"Error: Demo script not found for '{args.demo}'.")
+            _print_eval_workflow_help(registry, repo_root)
+            sys.exit(1)
+        args.demo = resolution.demo
     
     run_eval_demo(args.demo, args.transactions, args.output_dir, args.script_path)
+
+
+def _print_eval_workflow_help(registry: WorkflowRegistry, repo_root: Path) -> None:
+    choices = get_configured_workflows(
+        registry=registry,
+        repo_root=repo_root,
+        require_script=True,
+    )
+    if choices:
+        print("\nAvailable workflows:")
+        print(format_workflow_choices(choices))
+    else:
+        print("\nNo configured workflows with scripts were found.")
+    print("\nTip: configure workflows in workflows.json or set "
+          "ABIDEX_WORKFLOW_CONFIG/ABIDEX_WORKFLOW_DIR.")

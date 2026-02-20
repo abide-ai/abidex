@@ -70,6 +70,8 @@ abidex-logs analyze --notebook fraud
 abidex collector --port 8000
 ```
 
+See `CLI_USAGE.md` for workflow configuration and full CLI examples.
+
 ## Quick Start
 
 ```python

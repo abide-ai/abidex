@@ -26,13 +26,28 @@ abidex eval fraud
 
 # Run fraud detection with custom transaction count
 abidex eval fraud --transactions 50
+
+# Run a custom demo script without registry config
+abidex eval custom_demo --script-path ./examples/custom_demo.py
 ```
 
 **Options:**
-- `weather` - Weather agent logging demonstration
-- `fraud` - Complete fraud detection pipeline with 3 agents
+- `WORKFLOW` - Workflow ID or alias from your workflow config
 - `--transactions N` - Number of transactions to process (default: 25, fraud demo only)
 - `--output-dir DIR` - Directory to save log files (default: current directory)
+- `--script-path PATH` - Explicit demo script path (overrides workflow config)
+
+### Workflow Configuration
+
+Workflow-aware commands (like `eval`, `notebook`, and `logs analyze`) are driven by
+configured workflows. Define them in one of the following locations:
+
+- `workflows.json` or `.abidex_workflows.json` in the repo root or current directory
+- `ABIDEX_WORKFLOW_CONFIG` for a specific config file path
+- `ABIDEX_WORKFLOW_DIR` for a directory of workflow config JSON files
+
+Each workflow entry should include `id`, `display_name`, `script`, `notebook`, and
+`log_patterns` (or `log_pattern`), plus optional `aliases`.
 
 ### `abidex logs` - Analyze Telemetry Logs
 
@@ -82,7 +97,7 @@ abidex logs analyze --port 9999
 
 **Options:**
 - `--pattern PATTERN` - Glob pattern to match log files (default: `*agent_logs*.jsonl`)
-- `--notebook {agent,fraud}` - Which notebook to open (default: `agent`)
+- `--notebook WORKFLOW_OR_PATH` - Workflow name or notebook path (defaults to first available)
 - `--port PORT` - Port for Jupyter notebook server (default: 8888)
 
 ### `abidex collector` - Start Telemetry Collector
@@ -140,18 +155,10 @@ abidex logs summary
 
 The `logs analyze` command opens Jupyter notebooks that provide:
 
-- **Agent Logs Analysis** (`--notebook agent`):
-  - General agent telemetry analysis
-  - Event type distributions
-  - Performance metrics
-  - Time series analysis
-
-- **Fraud Detection Analysis** (`--notebook fraud`):
-  - Specialized fraud detection metrics
-  - Agent behavior analysis (thinking, actions, decisions)
-  - Risk assessment patterns
-  - Decision reasoning quality
-  - OpenTelemetry-style comprehensive metrics
+- **Workflow-specific analysis** (`--notebook <workflow>`):
+  - Uses the notebook path defined in your workflow config
+  - Falls back to the first available notebook if `--notebook` is omitted
+  - You can also pass a direct notebook file path
 
 ## Requirements
 
