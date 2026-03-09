@@ -16,15 +16,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install build
-        run: pip install build
+      - name: Install build and twine
+        run: pip install build twine
 
       - name: Build sdist and wheel
         run: python -m build
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          username: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: true
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/* --skip-existing
