@@ -235,7 +235,7 @@ For cross-process use: export from your app with `abidex.trace_buffer.export_to_
 ## Contributing & feedback
 
 - **Bugs & features:** [GitHub Issues](https://github.com/abide-ai/abidex/issues).
-- **Contributions:** PRs welcome. Run `pytest` and `ruff check` (or use `pip install -e ".[dev]"`).
+- **Contributions:** PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, tests, and how to add framework patches.
 
 We’re focused on Phase 1: execution observability (workflow/agent/task spans and GenAI attributes). More frameworks and deeper instrumentation are on the roadmap.
 
