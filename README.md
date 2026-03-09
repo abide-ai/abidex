@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/abidex.svg)](https://pypi.org/project/abidex/)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](https://mariadb.com/bsl11/)
 
-**Zero-code OpenTelemetry tracing for AI agents.** Add one import, get spans for workflows, agents, and tasks—with role, goal, backstory, and timing out of the box.
+**Zero-code monitoring and tracing for AI agents.** Add one import, get spans for workflows, agents, and tasks—with role, goal, backstory, and timing out of the box.
 
 ---
 
@@ -229,31 +229,6 @@ For cross-process use: export from your app with `abidex.trace_buffer.export_to_
 | **Spans only in console** | Set `OTEL_EXPORTER_OTLP_ENDPOINT` and install `abidex[otlp]`. Ensure the backend (SigNoz/Uptrace/Jaeger) is running and reachable. |
 | **CLI says "No spans in buffer"** | Set `ABIDEX_BUFFER_ENABLED=true` and run your agent in the same process, or export to JSONL and use `abidex trace last --file file.ndjson`. |
 | **Wrong or missing attributes** | Run with `ABIDEX_VERBOSE=true` to confirm which framework was patched. Check that you’re using the expected entry points (e.g. `crew.kickoff`, not a custom wrapper). |
-
----
-
-## Publishing to PyPI (Option A – tag push)
-
-PyPI shows the project description and README from the **last published version**. To update the listing, publish a new version (bump version, push a tag).
-
-**First-time setup**
-
-1. Create a [PyPI](https://pypi.org) account.
-2. Create an [API token](https://pypi.org/manage/account/token/) (scope: entire account or only project `abidex`).
-3. In the repo: **Settings → Secrets and variables → Actions → New repository secret**. Name: `PYPI_API_TOKEN`, Value: the token.
-
-**Publish a release**
-
-1. Bump `version` in `pyproject.toml` if needed (e.g. `0.1.1` for the next release).
-2. Commit and push to `main`.
-3. Create and push a tag (e.g. for version `0.1.0`):
-   ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
-4. The [GitHub Action](.github/workflows/publish.yml) builds and uploads to PyPI. Check **Actions** for status.
-
-**Manual publish (Option B):** `pip install build twine`, then `python -m build` and `twine upload dist/*` (with `TWINE_USERNAME=__token__` and `TWINE_PASSWORD=<token>`).
 
 ---
 
