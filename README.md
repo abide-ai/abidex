@@ -1,7 +1,7 @@
 # Abidex
 
 [![PyPI version](https://badge.fury.io/py/abidex.svg)](https://pypi.org/project/abidex/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](https://mariadb.com/bsl11/)
 
 **Zero-code OpenTelemetry tracing for AI agents.** Add one import, get spans for workflows, agents, and tasks—with role, goal, backstory, and timing out of the box.
 
@@ -241,6 +241,36 @@ We’re focused on Phase 1: execution observability (workflow/agent/task spans a
 
 ---
 
+## Publishing to PyPI (maintainers)
+
+To release a new version to PyPI:
+
+1. **Bump the version** in `pyproject.toml` (e.g. `version = "0.1.1"`).
+
+2. **Install build tools** (one-time):
+   ```bash
+   pip install build twine
+   ```
+
+3. **Build** sdist and wheel:
+   ```bash
+   python -m build
+   ```
+   Outputs go to `dist/`.
+
+4. **Upload to PyPI** (requires a [PyPI](https://pypi.org) account and [API token](https://pypi.org/manage/account/token/)). Configure with `~/.pypirc` or env vars (`TWINE_USERNAME=__token__`, `TWINE_PASSWORD=<token>`):
+   ```bash
+   twine upload dist/*
+   ```
+   To try Test PyPI first: `twine upload --repository testpypi dist/*`
+
+5. **Tag the release** (optional):
+   ```bash
+   git tag v0.1.0 && git push origin v0.1.0
+   ```
+
+---
+
 ## License
 
-MIT
+This project is licensed under the **Business Source License 1.1** (BSL 1.1). You may copy, modify, and redistribute the software for **non-production use**; production use requires a commercial license from Abide or compliance when the Change Date is reached. On the **Change Date** (see [LICENSE](LICENSE)), the license converts to the Apache License, Version 2.0. See [LICENSE](LICENSE) and [MariaDB BSL 1.1](https://mariadb.com/bsl11/) for full terms.

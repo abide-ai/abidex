@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Zero-code OpenTelemetry tracing for AI agents"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = {text = "Business Source License 1.1"}
 authors = [{ name = "Abide", url = "https://github.com/abide-ai" }]
 keywords = [
     "opentelemetry",
@@ -23,7 +23,7 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Free To Use But Restricted",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -64,6 +64,8 @@ packages = ["src/abidex"]
 include = [
     "src/abidex",
     "README.md",
+    "LICENSE",
+    "pyproject.toml",
 ]
 exclude = ["tests", "examples", ".git"]
 
