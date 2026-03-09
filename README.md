@@ -1,370 +1,246 @@
-# AbideX
+# Abidex
 
-OpenTelemetry-native observability SDK for AI agents, providing comprehensive telemetry for agent workflows, model calls, and tool executions.
+[![PyPI version](https://badge.fury.io/py/abidex.svg)](https://pypi.org/project/abidex/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**Zero-code OpenTelemetry tracing for AI agents.** Add one import, get spans for workflows, agents, and tasks—with role, goal, backstory, and timing out of the box.
+
+---
 
 ## Installation
 
 ```bash
-# Recommended: using uv (faster)
-uv add abidex
-
-# Or using pip
 pip install abidex
 ```
 
-### With Optional Dependencies
+For sending traces to an OTLP backend (SigNoz, Uptrace, Jaeger, etc.):
 
 ```bash
-# For Prometheus metrics
-pip install abidex[prometheus]
-# or with uv
-uv pip install "abidex[prometheus]"
-
-# For Claude integration
-pip install abidex[claude]
-# or with uv
-uv pip install "abidex[claude]"
-
-# For CrewAI integration  
-pip install abidex[crew]
-# or with uv
-uv pip install "abidex[crew]"
-
-# All optional features
-pip install abidex[all]
-# or with uv
-uv pip install "abidex[all]"
+pip install abidex[otlp]
 ```
 
-**Note**: The HTTP collector dependencies (FastAPI, uvicorn) are now included by default, so the collector command works out of the box.
+Optional dev setup (editable install + lint/test):
+
+```bash
+pip install -e ".[dev]"
+```
+
+Also works with **uv**, **pdm**, **hatch**: `uv add abidex`, `pdm add abidex`, etc.
+
+---
+
+## Quickstart
+
+1. **Install:** `pip install abidex`
+2. **Import** abidex before your crew/graph so it can patch frameworks.
+3. **Run** your agent script as usual—spans are created automatically.
+
+```python
+import abidex  # ← add this first
+
+from crewai import Agent, Task, Crew
+
+researcher = Agent(role="Researcher", goal="Find facts", backstory="You are a researcher.")
+task = Task(description="Summarize the topic", agent=researcher)
+crew = Crew(agents=[researcher], tasks=[task])
+
+result = crew.kickoff(inputs={"topic": "OpenTelemetry"})
+```
+
+No config required. Traces go to the **console** by default; point `OTEL_EXPORTER_OTLP_ENDPOINT` at a backend for a full UI.
+
+---
+
+## Add Abidex to your agent script
+
+Import `abidex` **before** you import or use CrewAI, LangGraph, or Pydantic AI. One line is enough.
+
+### CrewAI
+
+```python
+import abidex
+
+from crewai import Agent, Task, Crew
+
+agent = Agent(role="Analyst", goal="Analyze data", backstory="You are an analyst.")
+task = Task(description="Summarize the report", agent=agent)
+crew = Crew(agents=[agent], tasks=[task])
+result = crew.kickoff(inputs={"topic": "Q4 report"})
+```
+
+### LangGraph
+
+```python
+import abidex
+
+from langgraph.graph import StateGraph, MessagesState
+# ... build your graph ...
+compiled = graph.compile()
+result = compiled.invoke({"messages": [...]})
+```
+
+### Pydantic AI
+
+```python
+import abidex
+
+from pydantic_ai import Agent
+
+agent = Agent("my-model", system_prompt="You are a helpful assistant.")
+result = agent.run_sync("Explain observability in one sentence.")
+```
+
+---
+
+## How to see traces
+
+### Console (default)
+
+If you don’t set `OTEL_EXPORTER_OTLP_ENDPOINT`, spans are printed to **stderr**. Ideal for local debugging.
+
+### SigNoz (persistent UI + dashboards)
+
+1. Start SigNoz (see [examples/signoz-quickstart.md](examples/signoz-quickstart.md) or [SigNoz Docker docs](https://signoz.io/docs/install/docker/)):
+
+   ```bash
+   git clone https://github.com/signoz/signoz.git && cd signoz
+   docker compose -f deploy/docker-compose/standalone/docker-compose.yaml up -d
+   ```
+
+2. Set env and run your script:
+
+   ```bash
+   export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+   pip install abidex[otlp]
+   python your_agent_script.py
+   ```
+
+3. Open **http://localhost:3301** → Traces. Filter by `gen_ai.agent.role`, `gen_ai.workflow.name`, etc.
+
+### Uptrace (lightweight, dev-friendly)
+
+1. Start Uptrace:
+
+   ```bash
+   docker run -d -p 14317:4317 -p 14318:4318 --name uptrace \
+     -e UPTRACE_DSN=postgres://uptrace:uptrace@host.docker.internal:5432/uptrace \
+     uptrace/uptrace:latest
+   ```
+
+2. Set env and run:
+
+   ```bash
+   export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14317
+   pip install abidex[otlp]
+   python your_agent_script.py
+   ```
+
+3. Open **http://localhost:14318** → sign up (first user) → Traces.
+
+See [examples/uptrace-quickstart.md](examples/uptrace-quickstart.md) for more detail.
+
+---
+
+## Testing checklist
+
+After running a traced workflow, verify:
+
+| Check | What to look for |
+|-------|------------------|
+| **Role / goal / backstory** | Spans include `gen_ai.agent.role`, `gen_ai.agent.goal`, `gen_ai.agent.backstory` (CrewAI) or equivalent. |
+| **Hierarchy** | Workflow span is parent of agent/task spans. |
+| **Disable in tests** | Set `ABIDEX_AUTO=false` (or don’t import abidex) in tests to avoid patching and use your own tracer/mocks. |
+
+Example for tests:
+
+```bash
+ABIDEX_AUTO=false pytest tests/
+```
+
+---
 
 ## CLI
 
-Use the CLI to run demos, explore workflows, and analyze logs:
+The `abidex` command gives you a rich CLI (tables, colors, spinners). Enable the in-memory buffer so the CLI can see spans from the same process:
 
 ```bash
-# Run demos
-abidex eval simple
-abidex eval weather
-abidex eval fraud --transactions 50
-
-# Discover workflows and inspect logs
-abidex workflows
-abidex map fraud_detection
-abidex logs fraud_detection
-abidex notebook fraud_detection
-
-# Analyze logs across files
-abidex-logs list
-abidex-logs summary --pattern "fraud_detection_logs*.jsonl"
-abidex-logs analyze --notebook fraud
-
-# Start collector
-abidex collector --port 8000
+export ABIDEX_BUFFER_ENABLED=true
+python your_agent_script.py
+abidex trace last 10
 ```
 
-## Quick Start
+| Command | Description |
+|--------|-------------|
+| `abidex status` | Config, OTEL endpoint, patched frameworks, buffer size. When endpoint is unset, shows a hint: *To see persistent traces, start SigNoz/Uptrace and set OTEL_EXPORTER_OTLP_ENDPOINT.* Use `-v` for last-run hint. |
+| `abidex trace last [N]` | Table of last N spans: name, duration, status (✓ OK / ✗ ERROR), role/goal, start time. Help text: *After running your agent, use this to view recent spans.* |
+| `abidex trace last --filter "role=Researcher"` | Filter by attribute (e.g. `role=Researcher` or plain substring). |
+| `abidex trace export --format jsonl -o file.ndjson [--last N]` | Export spans to JSONL. |
+| `abidex trace export --format pretty [--last N]` | Colored JSON in the terminal (default last 10). |
+| `abidex init` | Print `.env` template and Docker one-liners for SigNoz and Uptrace. |
+| `abidex summary` | Stats: count by span name, avg duration, total tokens (if present), error count. |
 
-```python
-from abidex import TelemetryClient, AgentRun
-from abidex.sinks import JSONLSink
-
-client = TelemetryClient()
-client.add_sink(JSONLSink("telemetry.jsonl"))
-
-with AgentRun("my_task", client=client) as run:
-    # Your agent code here
-    pass
-```
-
-## Documentation
-
-- **[Technical Documentation](documentation/draft.md)**: Complete guide including:
-  - CLI workflow & command execution
-  - CLI usage guide
-  - Querying agents and pipelines
-  - Architecture & design decisions
-  - Integration examples
-- **[Examples](examples/)**: Usage examples
-
-### Usage Examples
-
-```python
-# Decorator-based instrumentation
-@client.record(model="gpt-4", backend="openai")
-def generate_text(prompt):
-    return openai_client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-# Automatic framework instrumentation
-from abidex import instrumentation
-
-# Auto-instrument OpenAI client
-openai_client = instrumentation.instrument_openai_client(openai_client)
-# Now all calls are automatically tracked!
-
-# Agent-specific logging
-agent_logger = get_agent_logger("my_agent")
-agent_logger.thinking("I need to analyze this request...")
-agent_logger.action("web_search", details={"query": "AI trends"})
-agent_logger.decision("use_gpt4", reasoning="Complex query needs advanced model")
-```
-
-### Framework Integrations
-
-#### Claude Integration
-
-```python
-from abidex.adapters import ClaudeAdapter
-import anthropic
-
-# Set up adapter
-adapter = ClaudeAdapter()
-client = anthropic.Anthropic(api_key="your-key")
-
-# Track Claude API calls
-with adapter.track_completion("claude-3-opus-20240229", messages) as call:
-    response = client.messages.create(
-        model="claude-3-opus-20240229",
-        messages=messages,
-        max_tokens=1000
-    )
-    call.set_response(response)
-
-# Or use automatic patching
-from abidex.adapters import patch_anthropic_client
-client = patch_anthropic_client(client)
-# Now all calls are automatically tracked
-```
-
-#### CrewAI Integration
-
-```python
-from abidex.adapters import CrewAdapter
-
-adapter = CrewAdapter()
-
-# Track crew execution
-with adapter.track_crew_execution("research_crew", agents=["researcher", "writer"]) as crew:
-    crew.set_input({"topic": "AI trends"})
-    # ... execute crew ...
-    crew.set_output(result)
-
-# Track individual agent tasks
-with adapter.track_agent_task("researcher", "Research AI trends") as task:
-    task.set_result("Found 10 relevant articles")
-```
-
-#### n8n Integration
-
-```python
-from abidex.adapters import N8NAdapter
-
-adapter = N8NAdapter()
-
-# Track workflow execution
-with adapter.track_workflow_execution("customer_onboarding", webhook_data) as workflow:
-    workflow.set_input(webhook_data)
-    # ... execute workflow ...
-    workflow.set_output(result)
-
-# Track individual nodes
-with adapter.track_node_execution("http_request", "HTTP Request") as node:
-    node.set_input({"url": "https://api.example.com"})
-    response = make_http_request()
-    node.set_output(response)
-```
-
-### Sinks and Data Export
-
-#### JSONL File Sink
-
-```python
-from abidex.sinks import JSONLSink
-
-# Basic file sink
-sink = JSONLSink("telemetry.jsonl")
-
-# With rotation
-sink = JSONLSink(
-    "telemetry.jsonl",
-    max_file_size=10*1024*1024,  # 10MB
-    backup_count=5
-)
-```
-
-#### HTTP Sink
-
-```python
-from abidex.sinks import HTTPSink
-
-# Send to HTTP endpoint
-sink = HTTPSink(
-    "https://your-collector.com/events",
-    auth_token="your-token",
-    batch_size=50
-)
-
-# Webhook sink
-from abidex.sinks import WebhookSink
-sink = WebhookSink(
-    "https://your-webhook.com",
-    secret="webhook-secret"
-)
-```
-
-#### Prometheus Metrics
-
-```python
-from abidex.sinks import PrometheusSink
-
-# Export metrics
-sink = PrometheusSink(metric_prefix="my_agent")
-
-# With HTTP server
-from abidex.sinks import PrometheusHTTPSink
-sink = PrometheusHTTPSink(port=8000)
-```
-
-### HTTP Collector
-
-Run a centralized collector to receive telemetry from multiple agents:
-
-```python
-from abidex.collectors import create_collector_app
-import uvicorn
-
-# Create collector app
-app = create_collector_app(
-    auth_token="your-secret-token",
-    enable_cors=True
-)
-
-# Run with uvicorn
-uvicorn.run(app, host="0.0.0.0", port=8000)
-```
-
-Or use the CLI:
+**Examples:**
 
 ```bash
-abidex collector --port 8000 --auth-token your-secret-token
+abidex status
+abidex status -v
+abidex trace last 10
+abidex trace last 5 --filter "role=Researcher"
+abidex trace last --file spans.ndjson
+abidex trace export --format jsonl -o traces.ndjson --last 100
+abidex trace export --format pretty --last 5
+abidex init
+abidex summary
 ```
 
-### Data Privacy and Redaction
+For cross-process use: export from your app with `abidex.trace_buffer.export_to_jsonl("spans.ndjson", 100)`, then run `abidex trace last --file spans.ndjson`.
 
-```python
-from abidex.utils.redaction import RedactionManager, add_redaction_rule
-import re
+---
 
-# Add custom redaction rules
-add_redaction_rule(
-    "custom_id",
-    re.compile(r'ID-\d{6}'),
-    "[CUSTOMER_ID]"
-)
+## Supported frameworks
 
-# Use with sinks
-sink = JSONLSink("telemetry.jsonl", redact_sensitive=True)
-```
+| Framework | Entry points | Extracted fields |
+|-----------|--------------|------------------|
+| **CrewAI** | `Crew.kickoff` / `akickoff`; Agent `execute_task` / `do_task` | Workflow name, team agents; agent role, goal, backstory, task description |
+| **LangGraph** | `CompiledStateGraph.invoke` / `.stream` | `gen_ai.framework`, optional `langgraph_node` from config |
+| **Pydantic AI** | `Agent.run` / `run_sync` | Agent name, instructions (truncated) |
+| **AutoGen** | (stub) | Planned |
+| **LlamaIndex Workflows** | (stub) | Planned |
+
+---
 
 ## Configuration
 
-### Environment Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ABIDEX_AUTO` | `true` | Auto-init and patch on import. Set to `false` to disable (e.g. in tests). |
+| `ABIDEX_VERBOSE` | `false` | When `true`, print patching messages on init (e.g. "Patched CrewAI successfully"). |
+| `ABIDEX_BUFFER_ENABLED` | `false` | When `true`, keep last 1000 spans in memory for `abidex trace last` / `abidex trace export`. |
+| `OTEL_SERVICE_NAME` | — | Service name in traces (e.g. `my-agent-app`). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP gRPC endpoint (e.g. `http://localhost:4317`). Requires `pip install abidex[otlp]`. |
 
-- `ABIDE_AGENT_ID`: Default agent ID
-- `ABIDE_LOG_LEVEL`: Default log level (debug, info, warn, error)
-- `ABIDE_REDACT_SENSITIVE`: Enable/disable sensitive data redaction (true/false)
+---
 
-### Global Client Setup
+## Troubleshooting
 
-```python
-from abidex import set_client, TelemetryClient
-from abidex.sinks import HTTPSink
+| Issue | What to try |
+|-------|-------------|
+| **No spans** | Import `abidex` **before** CrewAI/LangGraph/Pydantic AI. Check that your framework version is supported. |
+| **Spans only in console** | Set `OTEL_EXPORTER_OTLP_ENDPOINT` and install `abidex[otlp]`. Ensure the backend (SigNoz/Uptrace/Jaeger) is running and reachable. |
+| **CLI says "No spans in buffer"** | Set `ABIDEX_BUFFER_ENABLED=true` and run your agent in the same process, or export to JSONL and use `abidex trace last --file file.ndjson`. |
+| **Wrong or missing attributes** | Run with `ABIDEX_VERBOSE=true` to confirm which framework was patched. Check that you’re using the expected entry points (e.g. `crew.kickoff`, not a custom wrapper). |
 
-# Configure global client
-client = TelemetryClient(
-    agent_id="my-agent",
-    default_tags={"environment": "production"}
-)
-client.add_sink(HTTPSink("https://your-collector.com/events"))
-set_client(client)
+---
 
-# Now all spans will use this client by default
-```
+## Contributing & feedback
 
-## API Reference
+- **Bugs & features:** [GitHub Issues](https://github.com/abide-ai/abidex/issues).
+- **Contributions:** PRs welcome. Run `pytest` and `ruff check` (or use `pip install -e ".[dev]"`).
 
-### Core Classes
+We’re focused on Phase 1: execution observability (workflow/agent/task spans and GenAI attributes). More frameworks and deeper instrumentation are on the roadmap.
 
-- **`TelemetryClient`**: Main client for emitting events
-- **`Event`**: Core event structure
-- **`AgentRun`**: Context manager for tracking agent executions
-- **`ModelCall`**: Context manager for tracking model API calls
-- **`ToolCall`**: Context manager for tracking tool executions
-
-### Sinks
-
-- **`JSONLSink`**: Write events to JSONL files
-- **`HTTPSink`**: Send events to HTTP endpoints
-- **`PrometheusSink`**: Export metrics to Prometheus
-- **`WebhookSink`**: Send events to webhook endpoints
-
-### Adapters
-
-- **`ClaudeAdapter`**: Integration with Anthropic Claude
-- **`CrewAdapter`**: Integration with CrewAI
-- **`N8NAdapter`**: Integration with n8n workflows
-
-### Utilities
-
-- **`TokenCounter`**: Estimate token usage
-- **`RedactionManager`**: Handle sensitive data redaction
-- **`IDGenerator`**: Generate unique identifiers
-
-## Examples
-
-See the `/examples` directory for complete usage examples:
-
-- `basic_usage.py`: Simple telemetry tracking
-- `claude_integration.py`: Claude API integration
-- `crew_integration.py`: CrewAI workflow tracking
-- `http_collector.py`: Running a telemetry collector
-- `custom_sinks.py`: Creating custom sinks
-
-- **[Technical Documentation](documentation/draft.md)**: Complete guide including:
-  - CLI workflow & command execution
-  - CLI usage guide
-  - Querying agents and pipelines
-  - Architecture & design decisions
-  - Integration examples
-- **[Examples](examples/)**: Usage examples
-
-## Contributing
-
-```bash
-git clone https://github.com/abide-ai/abidex.git
-cd abidex
-
-# Install in development mode
-pip install -e .[dev]
-# Or using uv (faster)
-uv pip install -e .[dev]
-
-# For testing unpublished packages in other projects:
-# uv pip install /path/to/abidex
-# or
-# uv add /path/to/abidex
-
-pytest
-```
+---
 
 ## License
 
-MIT License
-
-## Support
-
-- Issues: https://github.com/abide-ai/abidex/issues
-- Discord: https://discord.gg/ZHuWhGqCm4
+MIT
