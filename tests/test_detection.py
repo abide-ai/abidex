@@ -19,8 +19,13 @@ def test_pydantic_ai_patch_registered():
     assert isinstance(out, bool)
 
 
-def test_stubs_return_false():
-    from abidex.patches.autogen_stub import apply_autogen_patch
-    from abidex.patches.llamaindex_stub import apply_llamaindex_patch
-    assert apply_autogen_patch() is False
-    assert apply_llamaindex_patch() is False
+def test_llama_index_patch_registered():
+    from abidex.patches.llama_index import apply_llama_index_patch
+    out = apply_llama_index_patch()
+    assert isinstance(out, bool)
+
+
+def test_n8n_sdk_python_patch_registered():
+    from abidex.patches.n8n_sdk_python import apply_n8n_sdk_python_patch
+    out = apply_n8n_sdk_python_patch()
+    assert isinstance(out, bool)

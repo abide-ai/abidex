@@ -6,8 +6,14 @@ from typing import List
 from abidex.config import get_service_name, ABIDEX_VERBOSE
 from abidex import otel_setup
 
-_FRAMEWORKS = ("crewai", "langgraph", "pydantic_ai")
-_FRAMEWORK_LABELS = {"crewai": "CrewAI", "langgraph": "LangGraph", "pydantic_ai": "Pydantic AI"}
+_FRAMEWORKS = ("crewai", "langgraph", "pydantic_ai", "llama_index", "n8n_sdk_python")
+_FRAMEWORK_LABELS = {
+    "crewai": "CrewAI",
+    "langgraph": "LangGraph",
+    "pydantic_ai": "Pydantic AI",
+    "llama_index": "LlamaIndex",
+    "n8n_sdk_python": "n8n",
+}
 
 
 def init(auto_patch: bool = True) -> List[str]:

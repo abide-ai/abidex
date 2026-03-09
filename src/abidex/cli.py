@@ -17,7 +17,7 @@ from abidex import trace_buffer
 
 app = typer.Typer(
     name="abidex",
-    help="""[bold]Abidex[/bold] – zero-code OpenTelemetry tracing for AI agents (CrewAI, LangGraph, Pydantic AI).
+    help="""[bold]Abidex[/bold] – zero-code OpenTelemetry tracing for AI agents (CrewAI, LangGraph, Pydantic AI, LlamaIndex, n8n).
 
 [dim]Usage:[/dim] Import [cyan]abidex[/cyan] before your crew/graph; traces are created automatically.
 For a persistent UI: set [cyan]OTEL_EXPORTER_OTLP_ENDPOINT[/cyan] (e.g. http://localhost:4317) and [cyan]pip install abidex[otlp][/cyan].

@@ -203,9 +203,9 @@ For cross-process use: export from your app with `abidex.trace_buffer.export_to_
 |-----------|--------------|------------------|
 | **CrewAI** | `Crew.kickoff` / `akickoff`; Agent `execute_task` / `do_task` | Workflow name, team agents; agent role, goal, backstory, task description |
 | **LangGraph** | `CompiledStateGraph.invoke` / `.stream` | `gen_ai.framework`, optional `langgraph_node` from config |
-| **Pydantic AI** | `Agent.run` / `run_sync` | Agent name, instructions (truncated) |
-| **AutoGen** | (stub) | Planned |
-| **LlamaIndex Workflows** | (stub) | Planned |
+| **Pydantic AI** | `Agent.run` / `run_sync` | Agent name, instructions |
+| **LlamaIndex** | `Workflow.run` (from `llama_index.core.workflow`) | Workflow name, `gen_ai.framework` |
+| **n8n** | `N8nClient.execute_workflow` / `run_workflow` / `run` (from `n8n_sdk_python`) | Workflow ID/name, `gen_ai.framework` |
 
 ---
 
@@ -232,44 +232,38 @@ For cross-process use: export from your app with `abidex.trace_buffer.export_to_
 
 ---
 
+## Publishing to PyPI (Option A – tag push)
+
+PyPI shows the project description and README from the **last published version**. To update the listing, publish a new version (bump version, push a tag).
+
+**First-time setup**
+
+1. Create a [PyPI](https://pypi.org) account.
+2. Create an [API token](https://pypi.org/manage/account/token/) (scope: entire account or only project `abidex`).
+3. In the repo: **Settings → Secrets and variables → Actions → New repository secret**. Name: `PYPI_API_TOKEN`, Value: the token.
+
+**Publish a release**
+
+1. Bump `version` in `pyproject.toml` if needed (e.g. `0.1.1` for the next release).
+2. Commit and push to `main`.
+3. Create and push a tag (e.g. for version `0.1.0`):
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+4. The [GitHub Action](.github/workflows/publish.yml) builds and uploads to PyPI. Check **Actions** for status.
+
+**Manual publish (Option B):** `pip install build twine`, then `python -m build` and `twine upload dist/*` (with `TWINE_USERNAME=__token__` and `TWINE_PASSWORD=<token>`).
+
+---
+
 ## Contributing & feedback
 
 - **Bugs & features:** [GitHub Issues](https://github.com/abide-ai/abidex/issues).
 - **Contributions:** PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, tests, and how to add framework patches.
 
-We’re focused on Phase 1: execution observability (workflow/agent/task spans and GenAI attributes). More frameworks and deeper instrumentation are on the roadmap.
+We’re focused on execution observability (workflow/agent/task spans and GenAI attributes). More frameworks and deeper instrumentation are on the roadmap.
 
----
-
-## Publishing to PyPI (maintainers)
-
-To release a new version to PyPI:
-
-1. **Bump the version** in `pyproject.toml` (e.g. `version = "0.1.1"`).
-
-2. **Install build tools** (one-time):
-   ```bash
-   pip install build twine
-   ```
-
-3. **Build** sdist and wheel:
-   ```bash
-   python -m build
-   ```
-   Outputs go to `dist/`.
-
-4. **Upload to PyPI** (requires a [PyPI](https://pypi.org) account and [API token](https://pypi.org/manage/account/token/)). Configure with `~/.pypirc` or env vars (`TWINE_USERNAME=__token__`, `TWINE_PASSWORD=<token>`):
-   ```bash
-   twine upload dist/*
-   ```
-   To try Test PyPI first: `twine upload --repository testpypi dist/*`
-
-5. **Tag the release** (optional):
-   ```bash
-   git tag v0.1.0 && git push origin v0.1.0
-   ```
-
----
 
 ## License
 
