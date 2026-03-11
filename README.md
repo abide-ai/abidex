@@ -242,4 +242,4 @@ We’re focused on execution observability (workflow/agent/task spans and GenAI 
 
 ## License
 
-This project is licensed under the **Business Source License 1.1** (BSL 1.1). You may copy, modify, and redistribute the software for **non-production use**; production use requires a commercial license from Abide or compliance when the Change Date is reached. On the **Change Date** (see [LICENSE](LICENSE)), the license converts to the Apache License, Version 2.0. See [LICENSE](LICENSE) and [MariaDB BSL 1.1](https://mariadb.com/bsl11/) for full terms.
+This project is licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE) for full terms.
