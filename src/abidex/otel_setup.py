@@ -32,8 +32,10 @@ def init_otel(
     global _initialized
     if _initialized:
         return
-    from opentelemetry.trace import NoOpTracerProvider
-    if not isinstance(trace.get_tracer_provider(), NoOpTracerProvider):
+    # Only skip if an SDK TracerProvider is already set. OTel default is ProxyTracerProvider
+    # (or NoOpTracerProvider) — in both cases we should set ours.
+    current = trace.get_tracer_provider()
+    if isinstance(current, TracerProvider):
         _initialized = True
         return
     resource = Resource.create({

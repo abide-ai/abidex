@@ -68,6 +68,8 @@ crew = Crew(agents=[agent], tasks=[task])
 result = crew.kickoff(inputs={"topic": "Q4 report"})
 ```
 
+For env vars (buffer, CrewAI telemetry) and import order, see [docs/crewai.md](docs/crewai.md).
+
 ### LangGraph
 
 ```python

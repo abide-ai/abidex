@@ -21,6 +21,8 @@ crew = Crew(agents=[agent], tasks=[task])
 result = crew.kickoff(inputs={"topic": "Q4 report"})
 ```
 
+See [crewai.md](crewai.md) for env config (`ABIDEX_BUFFER_ENABLED`, `CREWAI_DISABLE_TELEMETRY`, etc.) and troubleshooting.
+
 ### LangGraph
 
 ```python
