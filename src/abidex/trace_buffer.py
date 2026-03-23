@@ -4,7 +4,10 @@ Global deque (max 1000 spans) filled by a SpanProcessor; optional via ABIDEX_BUF
 """
 
 import json
+import subprocess
+import sys
 from collections import deque
+from pathlib import Path
 from typing import Any
 
 from opentelemetry.sdk.trace import ReadableSpan
@@ -46,12 +49,25 @@ def get_recent_spans(n: int = BUFFER_MAX) -> list[dict[str, Any]]:
     return list(_buffer)[-n:]
 
 
-def export_to_jsonl(path: str, n: int = BUFFER_MAX) -> None:
-    """Write the last n spans to a JSONL file. For cross-process CLI visibility, call from your app after a run."""
+def export_to_jsonl(path: str, n: int = BUFFER_MAX, *, show_table: bool = True) -> None:
+    """Write the last n spans to a JSONL file. For cross-process CLI visibility, call from your app after a run.
+
+    When show_table is True (default), prints a pretty table of spans to stdout after writing.
+    Set show_table=False for headless/CI runs.
+    """
     spans = get_recent_spans(n)
     with open(path, "w") as f:
         for s in spans:
             f.write(json.dumps(s) + "\n")
+
+    if show_table and spans:
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "abidex.cli", "trace", "last", "--file", str(Path(path).resolve())],
+                check=False,
+            )
+        except Exception:
+            pass  # Don't fail the run if table display fails
 
 
 def clear_buffer() -> None:

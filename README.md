@@ -195,7 +195,7 @@ abidex init
 abidex summary
 ```
 
-For cross-process use: export from your app with `abidex.trace_buffer.export_to_jsonl("spans.ndjson", 100)`, then run `abidex trace last --file spans.ndjson`.
+Export from your app: `abidex.trace_buffer.export_to_jsonl("spans.ndjson", 100)` writes the file and prints a pretty table by default. Use `show_table=False` for headless/CI. For cross-process: `abidex trace last --file spans.ndjson`.
 
 ---
 

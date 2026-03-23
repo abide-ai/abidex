@@ -79,9 +79,9 @@ from crewai import Agent, Task, Crew
 
 ---
 
-## Exporting spans for CLI (cross-process)
+## Exporting spans (standard behavior)
 
-To use `abidex trace last --file spans.ndjson` when the CLI runs in a different process, export from your app after the crew finishes:
+Call `trace_buffer.export_to_jsonl()` after your crew finishes. By default this writes spans to a JSONL file **and prints a pretty table** to stdout:
 
 ```python
 import abidex
@@ -89,8 +89,13 @@ from abidex import trace_buffer
 from crew_agent import run
 
 result = run(inputs={"topic": "OpenTelemetry"})
-trace_buffer.export_to_jsonl("spans.ndjson", 100)
-# Then: abidex trace last --file spans.ndjson
+trace_buffer.export_to_jsonl("spans.ndjson", 100)  # shows table automatically
+```
+
+Set `show_table=False` for headless/CI runs:
+
+```python
+trace_buffer.export_to_jsonl("spans.ndjson", 100, show_table=False)
 ```
 
 ---
