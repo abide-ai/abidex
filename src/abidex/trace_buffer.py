@@ -1,8 +1,3 @@
-"""
-Persistent trace visibility for Phase 1 CLI (trace last, export jsonl).
-Global deque (max 1000 spans) filled by a SpanProcessor; optional via ABIDEX_BUFFER_ENABLED.
-"""
-
 import json
 import subprocess
 import sys
@@ -29,7 +24,6 @@ def _span_to_dict(span: ReadableSpan) -> dict[str, Any]:
 
 
 class BufferSpanProcessor(SpanProcessor):
-    """Appends finished spans to the global deque; does not forward to exporter (otel_setup adds exporter separately)."""
 
     def on_start(self, span: Any, parent_context: Any = None) -> None:
         pass
