@@ -172,11 +172,14 @@ def init_cmd() -> None:
     table = Table(box=box.ROUNDED, header_style='bold blue', title='Docker one-liners')
     table.add_column('Backend', style='cyan')
     table.add_column('Command', style='green')
-    table.add_row('SigNoz', 'git clone https://github.com/signoz/signoz.git && cd signoz/deploy && docker compose -f docker/clickhouse-setup/docker-compose.yaml up -d')
+    table.add_row('SigNoz', 'git clone https://github.com/signoz/signoz.git && cd signoz/deploy/docker && docker compose up -d --remove-orphans')
     table.add_row('', 'UI: http://localhost:3301  →  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317')
     table.add_row('Uptrace', 'docker run -d -p 14317:4317 -p 14318:4318 --name uptrace -e UPTRACE_DSN=postgres://uptrace:uptrace@host.docker.internal:5432/uptrace uptrace/uptrace:latest')
     table.add_row('', 'UI: http://localhost:14318  →  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14317')
     console.print(Panel(table, border_style='blue', padding=(0, 1)))
+    console.print('[dim]Copy-paste commands (no table chars):[/dim]')
+    console.print('[cyan]SigNoz:[/cyan] git clone https://github.com/signoz/signoz.git && cd signoz/deploy/docker && docker compose up -d --remove-orphans')
+    console.print('[cyan]Uptrace:[/cyan] docker run -d -p 14317:4317 -p 14318:4318 --name uptrace -e UPTRACE_DSN=sqlite3:///tmp/uptrace.sqlite?mode=memory uptrace/uptrace:latest')
 @app.command()
 def summary(verbose: bool=typer.Option(False, '--verbose', '-v')) -> None:
     with console.status('[bold blue]Fetching recent traces...', spinner='dots'):
