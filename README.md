@@ -163,12 +163,16 @@ ABIDEX_AUTO=false pytest tests/
 
 ## CLI
 
-The `abidex` command gives you a rich CLI (tables, colors, spinners). Enable the in-memory buffer so the CLI can see spans from the same process:
+The `abidex` command gives you a rich CLI (tables, colors, spinners).
+
+**Buffer is per-process:** The in-memory buffer lives only in the Python process that runs your agent. A separate `abidex trace last` in another terminal sees an empty buffer. For cross-process viewing, call `trace_buffer.export_to_jsonl("spans.ndjson", 100)` in your agent script, then run `abidex trace last --file spans.ndjson`.
+
+For same-process usage (e.g. REPL or script that invokes the CLI before exit), enable the buffer and run your agent:
 
 ```bash
 export ABIDEX_BUFFER_ENABLED=true
-python your_agent_script.py
-abidex trace last 10
+python your_agent_script.py  # script should call export_to_jsonl() at the end
+abidex trace last --file spans.ndjson  # cross-process: use the exported file
 ```
 
 | Command | Description |
@@ -229,7 +233,7 @@ Export from your app: `abidex.trace_buffer.export_to_jsonl("spans.ndjson", 100)`
 |-------|-------------|
 | **No spans** | Import `abidex` **before** CrewAI/LangGraph/Pydantic AI. Check that your framework version is supported. |
 | **Spans only in console** | Set `OTEL_EXPORTER_OTLP_ENDPOINT` and install `abidex[otlp]`. Ensure the backend (SigNoz/Uptrace/Jaeger) is running and reachable. |
-| **CLI says "No spans in buffer"** | Set `ABIDEX_BUFFER_ENABLED=true` and run your agent in the same process, or export to JSONL and use `abidex trace last --file file.ndjson`. |
+| **CLI says "No spans in buffer"** | The buffer is per-process; a separate `abidex` process has an empty buffer. Have your agent call `trace_buffer.export_to_jsonl("spans.ndjson", 100)` before exit, then run `abidex trace last --file spans.ndjson`. |
 | **Wrong or missing attributes** | Run with `ABIDEX_VERBOSE=true` to confirm which framework was patched. Check that you’re using the expected entry points (e.g. `crew.kickoff`, not a custom wrapper). |
 
 ---

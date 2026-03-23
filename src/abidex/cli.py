@@ -92,7 +92,10 @@ def trace_last(n: int=typer.Argument(10, help='Number of spans to show'), filter
         with console.status('[bold blue]Fetching recent traces...', spinner='dots'):
             spans = trace_buffer.get_recent_spans(trace_buffer.BUFFER_MAX)
     if not spans:
-        console.print('[yellow]⚠️ No spans in buffer.[/yellow] Run a traced workflow (set ABIDEX_BUFFER_ENABLED=true) or use [cyan]--file[/cyan].')
+        if file_path is not None:
+            console.print(f'[yellow]⚠️ No spans in file.[/yellow] File [cyan]{file_path}[/cyan] is empty or has no valid JSONL spans.')
+        else:
+            console.print('[yellow]⚠️ No spans in buffer.[/yellow] Run a traced workflow (set ABIDEX_BUFFER_ENABLED=true) or use [cyan]--file[/cyan] with an exported JSONL file.')
         raise typer.Exit(0)
     spans = list(reversed(spans))[:n * 3]
     spans = _filter_spans(spans, filter_attr)[:n]
