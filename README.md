@@ -3,9 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/abidex.svg)](https://pypi.org/project/abidex/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-AbideAI provides zero-code monitoring for AI agents. 
-
-one import before CrewAI, LangGraph, Pydantic AI—get spans with role, goal, and timing.
+AbideX is zero-code monitoring for AI agents. Add one import before CrewAI, LangGraph, Pydantic AI and get spans with role, goal, and timing.
 
 ```bash
 pip install abidex
@@ -34,8 +32,6 @@ Traces go to **console** by default. For a persistent UI: `abidex backend start`
 | `abidex trace last [N]` | Table of last N spans (buffer or `spans.ndjson`) |
 | `abidex trace last --file file.ndjson` | Read from JSONL file |
 | `abidex trace export -f jsonl -o file.ndjson` | Export spans |
-| `abidex logs last [N]` | Last N logs (buffer or `logs/logs.ndjson`). Logs are enriched with `gen_ai.*` from active spans. |
-| `abidex logs export [-o path]` | Export logs to JSONL (default: `logs/logs.ndjson`) |
 | `abidex init` | Print `.env` template, Docker one-liners |
 | `abidex summary` | Span stats (count, duration, tokens) |
 
@@ -50,7 +46,6 @@ abidex trace last 10
 ## Docs
 
 - [Frameworks](docs/frameworks.md) — CrewAI, LangGraph, Pydantic AI, LlamaIndex, n8n
-- [Logs](docs/logs.md) — OTel logs with `gen_ai.*` enrichment from spans
 - [CrewAI integration](docs/crewai.md) — env vars, import order, troubleshooting
 - [Configuration](docs/configuration.md) — env variables
 - [Troubleshooting](docs/troubleshooting.md) — common issues
