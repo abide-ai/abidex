@@ -9,6 +9,9 @@ _FRAMEWORK_LABELS = {'crewai': 'CrewAI', 'langgraph': 'LangGraph', 'pydantic_ai'
 
 def init(auto_patch: bool=True) -> List[str]:
     otel_setup.init_otel(service_name=get_service_name())
+    # Set before any framework import so CrewAI doesn't override our TracerProvider
+    os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
+    os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
     if not auto_patch:
         return []
     if ABIDEX_VERBOSE:
