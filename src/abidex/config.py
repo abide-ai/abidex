@@ -13,6 +13,8 @@ def _env_bool(key: str, default: bool=True) -> bool:
 ABIDEX_AUTO: bool = _env_auto()
 ABIDEX_VERBOSE: bool = _env_bool('ABIDEX_VERBOSE', False)
 ABIDEX_BUFFER_ENABLED: bool = _env_bool('ABIDEX_BUFFER_ENABLED', False)
+ABIDEX_LOGS_ENABLED: bool = _env_bool('ABIDEX_LOGS_ENABLED', True)
+ABIDEX_LOGS_BUFFER_ENABLED: bool = _env_bool('ABIDEX_LOGS_BUFFER_ENABLED', True)
 
 def get_service_name() -> Optional[str]:
     return os.environ.get('OTEL_SERVICE_NAME')

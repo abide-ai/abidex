@@ -111,4 +111,4 @@ trace_buffer.export_to_jsonl("spans.ndjson", 100, show_table=False)
 
 ---
 
-For general integration, backends, and CLI usage, see [integration-and-testing.md](integration-and-testing.md) and the [README](../README.md).
+For backends and CLI, see [integration-and-testing.md](integration-and-testing.md).

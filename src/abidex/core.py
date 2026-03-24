@@ -4,11 +4,13 @@ import sys
 from typing import List
 from abidex.config import get_service_name, ABIDEX_VERBOSE
 from abidex import otel_setup
+from abidex import log_setup
 _FRAMEWORKS = ('crewai', 'langgraph', 'pydantic_ai', 'llama_index', 'n8n_sdk_python')
 _FRAMEWORK_LABELS = {'crewai': 'CrewAI', 'langgraph': 'LangGraph', 'pydantic_ai': 'Pydantic AI', 'llama_index': 'LlamaIndex', 'n8n_sdk_python': 'n8n'}
 
 def init(auto_patch: bool=True) -> List[str]:
     otel_setup.init_otel(service_name=get_service_name())
+    log_setup.init_logs(service_name=get_service_name())
     # Set before any framework import so CrewAI doesn't override our TracerProvider
     os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
     os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")

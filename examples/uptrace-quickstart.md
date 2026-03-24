@@ -67,4 +67,4 @@ Open **http://localhost:14318** in your browser.
 
 ## Note
 
-Uptrace uses **PostgreSQL** for metadata (projects, users, etc.) and **ClickHouse** for trace data. If you prefer a relational DB for the control plane and a dedicated store for spans, Uptrace fits that model. See the [README – Persistent Backends](../README.md#persistent-traces--ui--recommended-backends) for a comparison with SigNoz and other options.
+Uptrace uses **PostgreSQL** for metadata and **ClickHouse** for trace data. See [docs/integration-and-testing.md](../docs/integration-and-testing.md) for backends.

@@ -1,6 +1,6 @@
 # SigNoz quickstart (local Docker)
 
-Copy-paste instructions to run SigNoz locally for persistent traces and a UI. See [README](../README.md#persistent-traces--ui--recommended-backends) for how to point Abidex to SigNoz.
+Copy-paste instructions to run SigNoz locally for persistent traces and a UI. See [docs/integration-and-testing.md](../docs/integration-and-testing.md) for backends.
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ docker-compose -f docker/clickhouse-setup/docker-compose.yaml down -v
 
 ## Next step: send Abidex traces to SigNoz
 
-See the [README – Persistent Traces & UI](../README.md#persistent-traces--ui--recommended-backends) section. In short:
+See [docs/integration-and-testing.md](../docs/integration-and-testing.md). In short:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317

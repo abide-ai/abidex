@@ -15,9 +15,22 @@ _initialized = False
 
 
 def _get_exporter() -> SpanExporter:
-    if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+    if endpoint:
+        # Port 4318 = HTTP, 4317 or default = gRPC
+        use_http = False
         try:
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+            from urllib.parse import urlparse
+            parsed = urlparse(endpoint if "//" in endpoint else f"//{endpoint}")
+            if parsed.port == 4318:
+                use_http = True
+        except Exception:
+            pass
+        try:
+            if use_http:
+                from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+            else:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
             return OTLPSpanExporter()
         except ImportError:
             pass

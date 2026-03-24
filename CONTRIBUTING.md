@@ -45,7 +45,7 @@ Thanks for your interest in contributing. Abidex is Phase 1: zero-code OpenTelem
 
 - Open a PR against `main` with a clear description of the change.
 - Ensure `pytest` and `ruff check` pass.
-- For new features (e.g. a new framework), add a short note in the README **Supported frameworks** table and, if useful, an example in `examples/`.
+- For new features (e.g. a new framework), add to [docs/frameworks.md](docs/frameworks.md) and, if useful, an example in `examples/`.
 
 ## Bugs and feature ideas
 
@@ -58,4 +58,4 @@ We’re focused on **Phase 1: execution observability**—workflow/agent/task sp
 
 ---
 
-For usage and setup, see the [README](README.md).
+For usage, see the [README](README.md) and [docs/](docs/).

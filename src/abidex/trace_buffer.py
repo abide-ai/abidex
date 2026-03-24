@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from collections import deque
@@ -43,18 +44,22 @@ def get_recent_spans(n: int = BUFFER_MAX) -> list[dict[str, Any]]:
     return list(_buffer)[-n:]
 
 
-def export_to_jsonl(path: str, n: int = BUFFER_MAX, *, show_table: bool = True) -> None:
+def export_to_jsonl(path: str | Path, n: int = BUFFER_MAX, *, show_table: bool = True) -> Path:
     """Write the last n spans to a JSONL file. For cross-process CLI visibility, call from your app after a run.
 
     When show_table is True (default), prints a pretty table of spans to stdout after writing.
-    Set show_table=False for headless/CI runs.
+    Set show_table=False for headless/CI runs. Skipped automatically when run via `abidex run` (avoids duplicate table).
+    Returns the path written.
     """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     spans = get_recent_spans(n)
     with open(path, "w") as f:
         for s in spans:
             f.write(json.dumps(s) + "\n")
 
-    if show_table and spans:
+    skip_table = os.environ.get("ABIDEX_RUN_MODE") == "1"
+    if show_table and not skip_table and spans:
         try:
             subprocess.run(
                 [sys.executable, "-m", "abidex.cli", "trace", "last", "--file", str(Path(path).resolve())],
@@ -62,6 +67,19 @@ def export_to_jsonl(path: str, n: int = BUFFER_MAX, *, show_table: bool = True) 
             )
         except Exception:
             pass  # Don't fail the run if table display fails
+    return path
+
+
+def _timestamp_suffix() -> str:
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
+def export_with_timestamp(output_dir: str | Path = "traces", n: int = BUFFER_MAX, *, show_table: bool = True) -> Path:
+    """Export spans to timestamped file in output_dir. Creates dir if needed."""
+    output_dir = Path(output_dir)
+    path = output_dir / f"spans_{_timestamp_suffix()}.ndjson"
+    return export_to_jsonl(path, n, show_table=show_table)
 
 
 def clear_buffer() -> None:
