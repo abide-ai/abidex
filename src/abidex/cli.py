@@ -10,7 +10,8 @@ from pathlib import Path
 
 SIGNOZ_DIR = Path.home() / ".abidex" / "signoz"
 SIGNOZ_DEPLOY = SIGNOZ_DIR / "deploy" / "docker"
-SIGNOZ_UI_URL = "http://localhost:3301"
+# Upstream SigNoz docker compose exposes the app on 8080; older layouts used 3301 for the frontend.
+SIGNOZ_UI_PORTS = (8080, 3301)
 OTLP_GRPC_PORT = 4317
 import typer
 from rich.console import Console
@@ -72,13 +73,13 @@ def status(verbose: bool=typer.Option(False, '--verbose', '-v', help='Show extra
     table.add_row('Patched frameworks', ', '.join(patched) if patched else '[dim]none (run agent code first)[/dim]')
     table.add_row('Buffer enabled', f"{('✅' if ABIDEX_BUFFER_ENABLED else '—')} {str(ABIDEX_BUFFER_ENABLED)}")
     table.add_row('Logs enabled', f"{('✅' if ABIDEX_LOGS_ENABLED else '—')} {str(ABIDEX_LOGS_ENABLED)}")
+    trace_buf_len = trace_buffer.buffer_len()
     if ABIDEX_BUFFER_ENABLED:
-        n = trace_buffer.buffer_len()
-        table.add_row('Trace buffer', f'⏱️ {n} span(s)')
+        table.add_row('Trace buffer', f'⏱️ {trace_buf_len} span(s)')
     if ABIDEX_LOGS_ENABLED:
         ln = log_buffer.buffer_len()
         table.add_row('Log buffer', f'📋 {ln} log(s)')
-        if n > 0 and verbose:
+        if verbose and trace_buf_len > 0:
             spans = trace_buffer.get_recent_spans(1)
             if spans and spans[0].get('end_time_ns'):
                 ns = spans[0]['end_time_ns']
@@ -101,27 +102,35 @@ DEFAULT_LOGS_DIR = Path("logs")
 
 
 def _find_latest_spans_file() -> Path | None:
-    """Find spans: spans.ndjson, or latest traces/spans_*.ndjson."""
+    """Find spans: spans.ndjson, or latest traces/spans_*.ndjson (also data/traces/)."""
     if DEFAULT_SPANS_FILE.exists():
         return DEFAULT_SPANS_FILE
-    traces_dir = Path.cwd() / DEFAULT_TRACES_DIR
-    if traces_dir.exists():
-        candidates = sorted(traces_dir.glob("spans_*.ndjson"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if candidates:
-            return candidates[0]
+    cwd = Path.cwd()
+    for traces_dir in (cwd / DEFAULT_TRACES_DIR, cwd / "data" / "traces"):
+        if traces_dir.exists():
+            candidates = sorted(
+                traces_dir.glob("spans_*.ndjson"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                return candidates[0]
     return None
 
 
 def _find_latest_logs_file() -> Path | None:
-    """Find logs: latest logs/logs_*.ndjson (prefer) or logs/logs.ndjson."""
-    logs_dir = Path.cwd() / DEFAULT_LOGS_DIR
-    if logs_dir.exists():
-        candidates = sorted(logs_dir.glob("logs_*.ndjson"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if candidates:
-            return candidates[0]
+    """Find logs: latest logs/logs_*.ndjson, data/logs/, or logs/logs.ndjson."""
+    cwd = Path.cwd()
+    candidates: list[Path] = []
+    for logs_dir in (cwd / DEFAULT_LOGS_DIR, cwd / "data" / "logs"):
+        if not logs_dir.exists():
+            continue
+        candidates.extend(logs_dir.glob("logs_*.ndjson"))
         if (logs_dir / "logs.ndjson").exists():
-            return logs_dir / "logs.ndjson"
-    return None
+            candidates.append(logs_dir / "logs.ndjson")
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 def _list_span_files() -> None:
@@ -163,12 +172,20 @@ def _count_logs_in_latest() -> tuple[int, Path | None]:
 def _list_log_files() -> None:
     """Print log files with relative path and position (newest first)."""
     cwd = Path.cwd()
-    logs_dir = cwd / DEFAULT_LOGS_DIR
-    files = []
-    if logs_dir.exists():
-        files = sorted(logs_dir.glob("*.ndjson"), key=lambda x: x.stat().st_mtime, reverse=True)
+    files: list[Path] = []
+    for logs_dir in (cwd / DEFAULT_LOGS_DIR, cwd / "data" / "logs"):
+        if logs_dir.exists():
+            files.extend(logs_dir.glob("*.ndjson"))
+    files = sorted(files, key=lambda x: x.stat().st_mtime, reverse=True)
     if not files:
-        console.print(f'[yellow]⚠️ No log files.[/yellow] Expected [cyan]{DEFAULT_LOGS_DIR}/logs_*.ndjson[/cyan]')
+        console.print(
+            f'[yellow]⚠️ No log files.[/yellow] Expected [cyan]{DEFAULT_LOGS_DIR}/logs_*.ndjson[/cyan] '
+            'or [cyan]data/logs/*.ndjson[/cyan].'
+        )
+        console.print(
+            '[dim]Note:[/dim] [cyan]data/traces/spans_*.ndjson[/cyan] files are OpenTelemetry [bold]traces[/bold] (spans), not log records. '
+            'Use [cyan]abidex trace last[/cyan] or [cyan]abidex trace last --file <path>[/cyan].'
+        )
         return
     table = Table(box=box.ROUNDED, header_style='bold blue', title='Log files (newest first)')
     table.add_column('#', justify='right', style='dim', width=4)
@@ -491,14 +508,39 @@ def run_cmd(
 backend_app = typer.Typer(help="Start, stop, or check SigNoz backend (requires pip install abidex[otlp])")
 
 
-def _check_backend(host: str = "localhost", ui_port: int = 3301) -> bool:
-    """Return True if SigNoz UI is reachable."""
-    try:
-        import urllib.request
-        urllib.request.urlopen(f"http://{host}:{ui_port}", timeout=3)
-        return True
-    except Exception:
-        return False
+def _signoz_ui_url(host: str = "localhost") -> tuple[str | None, int | None]:
+    """Return (http URL, port) for the first reachable SigNoz UI port, or (None, None)."""
+    import urllib.error
+    import urllib.request
+
+    for port in SIGNOZ_UI_PORTS:
+        try:
+            urllib.request.urlopen(f"http://{host}:{port}", timeout=3)
+            return f"http://{host}:{port}", port
+        except (urllib.error.URLError, OSError):
+            continue
+    return None, None
+
+
+def _check_backend(host: str = "localhost") -> bool:
+    """Return True if SigNoz UI is reachable on a known port."""
+    url, _ = _signoz_ui_url(host)
+    return url is not None
+
+
+def _print_signoz_docker_hint() -> None:
+    """Show compose status when UI is unreachable (helps debug Docker / port issues)."""
+    if not SIGNOZ_DEPLOY.exists():
+        return
+    r = subprocess.run(
+        ["docker", "compose", "ps"],
+        cwd=str(SIGNOZ_DEPLOY),
+        capture_output=True,
+        text=True,
+    )
+    out = (r.stdout or r.stderr or "").strip()
+    if out:
+        console.print("[dim]" + out[:4000] + ("…[/dim]" if len(out) > 4000 else "[/dim]"))
 
 
 @backend_app.command("start")
@@ -526,20 +568,38 @@ def backend_start(no_browser: bool = typer.Option(False, "--no-browser", help="D
         console.print(f"[red]⚠️ docker compose failed: {r.stderr}[/red]")
         raise typer.Exit(1)
     console.print("[green]✅ SigNoz started[/green]")
-    # Wait for UI to be ready
+    # Wait for UI to be ready (8080 = current compose; 3301 = legacy frontend-only layout)
     with console.status("[bold blue]Waiting for SigNoz UI...", spinner="dots"):
         for _ in range(45):
             time.sleep(2)
             if _check_backend():
                 break
         else:
-            console.print("[yellow]⚠️ UI not ready yet. Open http://localhost:3301 manually.[/yellow]")
+            console.print(
+                "[yellow]⚠️ UI not ready yet. Try http://localhost:8080 or http://localhost:3301 "
+                "(first boot can take several minutes while images start).[/yellow]"
+            )
+            _print_signoz_docker_hint()
+    ui_url, _ = _signoz_ui_url()
     if not no_browser:
-        webbrowser.open(SIGNOZ_UI_URL)
-        console.print(f"[dim]Opened {SIGNOZ_UI_URL}[/dim]")
+        if ui_url:
+            webbrowser.open(ui_url)
+            console.print(f"[dim]Opened {ui_url}[/dim]")
+        else:
+            console.print(
+                "[yellow]⚠️ Could not reach SigNoz UI on ports "
+                f"{', '.join(str(p) for p in SIGNOZ_UI_PORTS)}.[/yellow]"
+            )
+            console.print(f"  Check Docker is running, then: [cyan]cd {SIGNOZ_DEPLOY} && docker compose ps[/cyan]")
+            _print_signoz_docker_hint()
     console.print()
     console.print(f"[bold]Next:[/bold] export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:{OTLP_GRPC_PORT}")
-    console.print(f"  Then run your agent. Traces will appear in [cyan]{SIGNOZ_UI_URL}[/cyan]")
+    if ui_url:
+        console.print(f"  Then run your agent. Traces will appear in [cyan]{ui_url}[/cyan]")
+    else:
+        console.print(
+            f"  When the UI is up (see ports {', '.join(str(p) for p in SIGNOZ_UI_PORTS)}), open it in the browser."
+        )
 
 
 @backend_app.command("stop")
@@ -563,9 +623,10 @@ def backend_stop() -> None:
 @backend_app.command("status")
 def backend_status() -> None:
     """Check if SigNoz backend is reachable."""
-    if _check_backend():
+    ui_url, _ = _signoz_ui_url()
+    if ui_url:
         console.print("[green]✅ SigNoz is running[/green]")
-        console.print(f"  UI: [cyan]{SIGNOZ_UI_URL}[/cyan]")
+        console.print(f"  UI: [cyan]{ui_url}[/cyan]")
         console.print(f"  OTLP gRPC: [cyan]http://localhost:{OTLP_GRPC_PORT}[/cyan]")
     else:
         console.print("[yellow]⚠️ SigNoz is not reachable[/yellow]")
@@ -597,7 +658,7 @@ def init_cmd() -> None:
     table.add_column('Backend', style='cyan')
     table.add_column('Command', style='green')
     table.add_row('SigNoz', 'git clone https://github.com/signoz/signoz.git && cd signoz/deploy/docker && docker compose up -d --remove-orphans')
-    table.add_row('', 'UI: http://localhost:3301  →  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317')
+    table.add_row('', 'UI: http://localhost:8080 (or :3301 on older installs)  →  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317')
     table.add_row('Uptrace', 'docker run -d -p 14317:4317 -p 14318:4318 --name uptrace -e UPTRACE_DSN=postgres://uptrace:uptrace@host.docker.internal:5432/uptrace uptrace/uptrace:latest')
     table.add_row('', 'UI: http://localhost:14318  →  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14317')
     console.print(Panel(table, border_style='blue', padding=(0, 1)))

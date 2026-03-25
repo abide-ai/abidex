@@ -16,29 +16,37 @@ from crewai import Agent, Task, Crew
 # ... run your crew
 ```
 
-Traces go to **console** by default. For a persistent UI: `abidex backend start` then set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`.
+Traces go to **console** by default. For a persistent UI: `abidex backend start` then open **http://localhost:8080** (SigNoz’s default; some older installs use **3301**) and set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`.
 
 ---
 
 ## CLI
 
+**Traces vs logs.** In OpenTelemetry these are different signals. **Traces** are made of **spans**: nested units of work (e.g. a CrewAI workflow, an agent step) with timing, parent/child links, and attributes such as `gen_ai.agent.role`. Use `abidex trace` / `trace last` and span exports like `spans_*.ndjson`. **Logs** are discrete **log records** (often from Python’s `logging` routed through the OTel logs SDK); they may include trace/span context, and Abidex can attach `gen_ai.*` fields from the active span when a line is emitted. Use `abidex logs` / `logs last` and files such as `logs_*.ndjson`. Both can be sent to the same backend (e.g. SigNoz) but the CLI treats span files and log files separately.
+
 | Command | Description |
 |--------|-------------|
-| `abidex run main.py` | Run script, then show trace table |
-| `abidex backend start` | Start SigNoz (clones to `~/.abidex/signoz`), open UI |
-| `abidex backend stop` | Stop SigNoz |
-| `abidex backend status` | Check if backend is reachable |
-| `abidex status` | Config, buffer, patched frameworks |
-| `abidex trace last [N]` | Table of last N spans (buffer or `spans.ndjson`) |
-| `abidex trace last --file file.ndjson` | Read from JSONL file |
-| `abidex trace export -f jsonl -o file.ndjson` | Export spans |
-| `abidex init` | Print `.env` template, Docker one-liners |
-| `abidex summary` | Span stats (count, duration, tokens) |
+| `abidex run SCRIPT.py` | Run a script with span buffer on, then print a trace table (`-n` / `--last` for row count) |
+| `abidex backend start` | Clone SigNoz if needed (`~/.abidex/signoz`), `docker compose up`, open UI (8080 or 3301) |
+| `abidex backend stop` | Stop SigNoz stack |
+| `abidex backend status` | Check if SigNoz UI / OTLP ports are reachable |
+| `abidex status` | Config, buffers, patched frameworks (`-v` for extra detail) |
+| `abidex trace` · `abidex spans` | List span JSONL files (e.g. `spans.ndjson`, `traces/`, `data/traces/`) |
+| `abidex trace last [N]` | Table of last N spans from buffer or latest export (`--file`, `--filter`, `-v`) |
+| `abidex trace export -f jsonl -o FILE` | Export spans from buffer to JSONL (`-f pretty` for JSON stdout) |
+| `abidex logs` | List log JSONL files (`logs/`, `data/logs/`) |
+| `abidex logs last [N]` | Table of last N OTel log records (buffer or latest file; `--file path.ndjson`) |
+| `abidex logs export [-o FILE]` | Export buffered logs to JSONL (default `logs/logs.ndjson`) |
+| `abidex notebook` | Create `notebooks/abidex_logs.ipynb` from latest logs, optional date filter, launch Jupyter |
+| `abidex init` | Print `.env` template and Docker one-liners |
+| `abidex summary` | Span stats (count, duration, tokens; `-v` for more) |
 
 ```bash
 abidex backend start
 abidex run main.py
 abidex trace last 10
+abidex logs last
+abidex notebook
 ```
 
 ---

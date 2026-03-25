@@ -19,7 +19,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 abidex run main.py
 ```
 
-UI at **http://localhost:3301**.
+UI at **http://localhost:8080** (SigNoz’s current default; older docs used port 3301).
 
 ### Uptrace
 

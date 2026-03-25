@@ -7,3 +7,4 @@
 | **CLI says "No spans in buffer"** | Buffer is per-process. Call `trace_buffer.export_to_jsonl("spans.ndjson", 100)` in your script, then `abidex trace last` (or use `abidex run main.py`). |
 | **Wrong or missing attributes** | Run with `ABIDEX_VERBOSE=true`. Check you're using standard entry points (e.g. `crew.kickoff`, `compiled.invoke`). |
 | **Tests failing / double traces** | Set `ABIDEX_AUTO=false` in tests. |
+| **SigNoz UI “can’t be reached”** | Current SigNoz `docker-compose` exposes the UI on **http://localhost:8080** (older installs used **3301**). Run `cd ~/.abidex/signoz/deploy/docker && docker compose ps` and wait until containers are healthy; first start can take several minutes. |
