@@ -15,7 +15,9 @@ DEFAULT_LOGS_DIR = Path("logs")
 
 
 def _log_data_to_dict(log_data) -> dict[str, Any]:
-    rec = log_data.log_record
+    rec = getattr(log_data, "log_record", None)
+    if rec is None:
+        rec = log_data
     attrs = dict(rec.attributes) if rec.attributes else {}
     trace_id = f"0x{format_trace_id(rec.trace_id)}" if rec.trace_id else None
     span_id = f"0x{format_span_id(rec.span_id)}" if rec.span_id else None
@@ -30,6 +32,9 @@ def _log_data_to_dict(log_data) -> dict[str, Any]:
 
 
 class BufferLogProcessor(LogRecordProcessor):
+    def on_emit(self, log_record) -> None:
+        _buffer.append(_log_data_to_dict(log_record))
+
     def emit(self, log_data) -> None:
         _buffer.append(_log_data_to_dict(log_data))
 

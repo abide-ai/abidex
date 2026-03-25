@@ -32,17 +32,29 @@ def _agentic_attributes_from_span(span) -> dict[str, str]:
 class AgenticLogEnricherProcessor(LogRecordProcessor):
     """Adds gen_ai.* attributes from the current span to each log record."""
 
-    def emit(self, log_data) -> None:
+    def _enrich(self, log_data) -> None:
         span = trace.get_current_span()
-        if span.is_recording() and hasattr(span, "attributes"):
-            attrs = _agentic_attributes_from_span(span)
-            if attrs:
-                rec = log_data.log_record
-                for k, v in attrs.items():
-                    try:
-                        rec.attributes[k] = v
-                    except Exception:
-                        pass
+        if not (span.is_recording() and hasattr(span, "attributes")):
+            return
+        attrs = _agentic_attributes_from_span(span)
+        if not attrs:
+            return
+        rec = getattr(log_data, "log_record", None)
+        if rec is None:
+            rec = log_data
+        for k, v in attrs.items():
+            try:
+                rec.attributes[k] = v
+            except Exception:
+                pass
+
+    def on_emit(self, log_record) -> None:
+        """OpenTelemetry SDK >= 1.35 uses on_emit(ReadWriteLogRecord)."""
+        self._enrich(log_record)
+
+    def emit(self, log_data) -> None:
+        """Older SDKs use emit(LogData)."""
+        self._enrich(log_data)
 
     def shutdown(self) -> None:
         pass
