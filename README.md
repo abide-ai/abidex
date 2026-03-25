@@ -7,7 +7,8 @@ AbideX is zero-code monitoring for AI agents. Add one import before CrewAI, Lang
 
 ```bash
 pip install abidex
-# or for OTLP backend: pip install abidex[otlp]
+pip install 'abidex[otlp]'       # OTLP → SigNoz / Jaeger / etc. (zsh: quote the extras)
+pip install 'abidex[notebook]'   # optional: `abidex notebook` (Jupyter + pandas stack)
 ```
 
 ```python

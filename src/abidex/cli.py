@@ -455,7 +455,9 @@ def notebook_cmd() -> None:
     try:
         subprocess.run([sys.executable, "-m", "jupyter", "notebook", str(nb_path)], check=False)
     except FileNotFoundError:
-        console.print('[yellow]⚠️ Jupyter not found.[/yellow] Reinstall abidex: [cyan]pip install abidex[/cyan]')
+        console.print(
+            "[yellow]⚠️ Jupyter not found.[/yellow] Install notebook deps: [cyan]pip install 'abidex[notebook]'[/cyan]"
+        )
         raise typer.Exit(1)
 
 
