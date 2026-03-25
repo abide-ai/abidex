@@ -10,7 +10,7 @@ from pathlib import Path
 
 SIGNOZ_DIR = Path.home() / ".abidex" / "signoz"
 SIGNOZ_DEPLOY = SIGNOZ_DIR / "deploy" / "docker"
-SIGNOZ_UI_URL = "http://localhost:3301"
+SIGNOZ_UI_URL = "http://localhost:8080"
 OTLP_GRPC_PORT = 4317
 import typer
 from rich.console import Console
@@ -491,7 +491,7 @@ def run_cmd(
 backend_app = typer.Typer(help="Start, stop, or check SigNoz backend (requires pip install abidex[otlp])")
 
 
-def _check_backend(host: str = "localhost", ui_port: int = 3301) -> bool:
+def _check_backend(host: str = "localhost", ui_port: int = 8080) -> bool:
     """Return True if SigNoz UI is reachable."""
     try:
         import urllib.request
@@ -533,7 +533,7 @@ def backend_start(no_browser: bool = typer.Option(False, "--no-browser", help="D
             if _check_backend():
                 break
         else:
-            console.print("[yellow]⚠️ UI not ready yet. Open http://localhost:3301 manually.[/yellow]")
+            console.print(f"[yellow]⚠️ UI not ready yet. Open {SIGNOZ_UI_URL} manually.[/yellow]")
     if not no_browser:
         webbrowser.open(SIGNOZ_UI_URL)
         console.print(f"[dim]Opened {SIGNOZ_UI_URL}[/dim]")
@@ -597,7 +597,7 @@ def init_cmd() -> None:
     table.add_column('Backend', style='cyan')
     table.add_column('Command', style='green')
     table.add_row('SigNoz', 'git clone https://github.com/signoz/signoz.git && cd signoz/deploy/docker && docker compose up -d --remove-orphans')
-    table.add_row('', 'UI: http://localhost:3301  →  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317')
+    table.add_row('', 'UI: http://localhost:8080  →  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317')
     table.add_row('Uptrace', 'docker run -d -p 14317:4317 -p 14318:4318 --name uptrace -e UPTRACE_DSN=postgres://uptrace:uptrace@host.docker.internal:5432/uptrace uptrace/uptrace:latest')
     table.add_row('', 'UI: http://localhost:14318  →  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14317')
     console.print(Panel(table, border_style='blue', padding=(0, 1)))

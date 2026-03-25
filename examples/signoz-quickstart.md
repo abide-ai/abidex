@@ -23,7 +23,7 @@ docker-compose -f docker/clickhouse-setup/docker-compose.yaml ps
 
 ## Access the UI
 
-Open **http://localhost:3301** in your browser. On first visit you’ll go through signup; create an account to log in.
+Open **http://localhost:8080** in your browser. On first visit you’ll go through signup; create an account to log in.
 
 ## Stop SigNoz
 

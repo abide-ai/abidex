@@ -4,4 +4,4 @@ agent = Agent('openai:gpt-4o-mini', system_prompt='You are a helpful assistant. 
 if __name__ == '__main__':
     result = agent.run_sync('What is OpenTelemetry in one sentence?')
     print(result.data)
-    print('\nCheck SigNoz at http://localhost:3301 or Uptrace at http://localhost:14318 for traces.')
+    print('\nCheck SigNoz at http://localhost:8080 or Uptrace at http://localhost:14318 for traces.')
