@@ -12,6 +12,7 @@ from abidex.config import get_service_name, ABIDEX_LOGS_ENABLED, ABIDEX_LOGS_BUF
 from abidex import log_buffer
 
 _initialized = False
+_logger = logging.getLogger(__name__)
 
 
 def _agentic_attributes_from_span(span) -> dict[str, str]:
@@ -24,25 +25,41 @@ def _agentic_attributes_from_span(span) -> dict[str, str]:
         for k, v in attrs.items():
             if isinstance(k, str) and k.startswith("gen_ai.") and v is not None:
                 out[k] = str(v)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Best-effort enrichment: never break logging if span attributes are unexpected.
+        _logger.debug("Failed to extract agentic attributes from span: %s", exc)
     return out
 
 
 class AgenticLogEnricherProcessor(LogRecordProcessor):
     """Adds gen_ai.* attributes from the current span to each log record."""
 
-    def emit(self, log_data) -> None:
+    def _enrich(self, log_data) -> None:
         span = trace.get_current_span()
-        if span.is_recording() and hasattr(span, "attributes"):
-            attrs = _agentic_attributes_from_span(span)
-            if attrs:
-                rec = log_data.log_record
-                for k, v in attrs.items():
-                    try:
-                        rec.attributes[k] = v
-                    except Exception:
-                        pass
+        if not (span.is_recording() and hasattr(span, "attributes")):
+            return
+        attrs = _agentic_attributes_from_span(span)
+        if not attrs:
+            return
+        rec = getattr(log_data, "log_record", None)
+        if rec is None:
+            rec = log_data
+        for k, v in attrs.items():
+            try:
+                rec.attributes[k] = v
+            except Exception as exc:
+                # Enrichment must not interfere with normal logging; log and continue.
+                _logger.debug(
+                    "Failed to set agentic log attribute %r on record: %s", k, exc
+                )
+
+    def on_emit(self, log_record) -> None:
+        """OpenTelemetry SDK >= 1.35 uses on_emit(ReadWriteLogRecord)."""
+        self._enrich(log_record)
+
+    def emit(self, log_data) -> None:
+        """Older SDKs use emit(LogData)."""
+        self._enrich(log_data)
 
     def shutdown(self) -> None:
         pass
