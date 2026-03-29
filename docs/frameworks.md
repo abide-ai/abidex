@@ -44,6 +44,17 @@ agent = Agent("my-model", system_prompt="You are a helpful assistant.")
 result = agent.run_sync("Explain observability in one sentence.")
 ```
 
+Async usage:
+
+```python
+import abidex
+
+from pydantic_ai import Agent
+
+agent = Agent("my-model", system_prompt="You are a helpful assistant.")
+result = await agent.run("Explain observability in one sentence.")
+```
+
 ---
 
 ## LlamaIndex Workflows
