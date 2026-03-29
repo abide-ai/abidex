@@ -1,0 +1,10 @@
+{
+  "logs": {
+    "patterns": [
+      "*_logs_*.jsonl",
+      "*_telemetry_*.jsonl",
+      "agent_logs_*.jsonl"
+    ],
+    "auto_detect": true
+  }
+}
