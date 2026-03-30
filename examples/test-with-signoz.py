@@ -12,4 +12,4 @@ crew = Crew(agents=[researcher], tasks=[task])
 if __name__ == '__main__':
     result = crew.kickoff(inputs={'topic': 'OpenTelemetry'})
     print(result)
-    print('\nCheck SigNoz at http://localhost:3301')
+    print('\nCheck SigNoz at http://localhost:8080')

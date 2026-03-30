@@ -24,4 +24,4 @@ graph = builder.compile()
 if __name__ == '__main__':
     result = graph.invoke({'topic': 'OpenTelemetry', 'research': '', 'summary': ''})
     print('Result:', result)
-    print('\nCheck SigNoz at http://localhost:3301 or Uptrace at http://localhost:14318 for traces.')
+    print('\nCheck SigNoz at http://localhost:8080 or Uptrace at http://localhost:14318 for traces.')
