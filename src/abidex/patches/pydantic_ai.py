@@ -1,4 +1,6 @@
+import inspect
 from typing import Any, Callable
+
 from abidex.otel_setup import get_tracer
 GEN_AI_FRAMEWORK = 'gen_ai.framework'
 GEN_AI_AGENT_NAME = 'gen_ai.agent.name'
@@ -17,6 +19,22 @@ def _agent_name(agent: Any) -> str:
     return getattr(agent, '__class__', type(agent)).__name__ or 'Unnamed'
 
 def _wrap_run(original: Callable[..., Any]) -> Callable[..., Any]:
+    if inspect.iscoroutinefunction(original):
+
+        async def run(*args: Any, **kwargs: Any) -> Any:
+            self = args[0] if args else kwargs.get('self')
+            name = _agent_name(self)
+            span_name = f'Agent: {name}'
+            tracer = get_tracer('pydantic_ai')
+            with tracer.start_as_current_span(span_name) as span:
+                span.set_attribute(GEN_AI_FRAMEWORK, 'pydantic-ai')
+                span.set_attribute(GEN_AI_AGENT_NAME, name)
+                instructions = getattr(self, 'system_prompt', None) or getattr(self, 'instructions', None)
+                if instructions:
+                    span.set_attribute(GEN_AI_INSTRUCTIONS, _trunc(instructions))
+                return await original(*args, **kwargs)
+
+        return run
 
     def run(*args: Any, **kwargs: Any) -> Any:
         self = args[0] if args else kwargs.get('self')
@@ -30,9 +48,27 @@ def _wrap_run(original: Callable[..., Any]) -> Callable[..., Any]:
             if instructions:
                 span.set_attribute(GEN_AI_INSTRUCTIONS, _trunc(instructions))
             return original(*args, **kwargs)
+
     return run
 
+
 def _wrap_run_sync(original: Callable[..., Any]) -> Callable[..., Any]:
+    if inspect.iscoroutinefunction(original):
+
+        async def run_sync(*args: Any, **kwargs: Any) -> Any:
+            self = args[0] if args else kwargs.get('self')
+            name = _agent_name(self)
+            span_name = f'Agent: {name}'
+            tracer = get_tracer('pydantic_ai')
+            with tracer.start_as_current_span(span_name) as span:
+                span.set_attribute(GEN_AI_FRAMEWORK, 'pydantic-ai')
+                span.set_attribute(GEN_AI_AGENT_NAME, name)
+                instructions = getattr(self, 'system_prompt', None) or getattr(self, 'instructions', None)
+                if instructions:
+                    span.set_attribute(GEN_AI_INSTRUCTIONS, _trunc(instructions))
+                return await original(*args, **kwargs)
+
+        return run_sync
 
     def run_sync(*args: Any, **kwargs: Any) -> Any:
         self = args[0] if args else kwargs.get('self')
@@ -46,6 +82,7 @@ def _wrap_run_sync(original: Callable[..., Any]) -> Callable[..., Any]:
             if instructions:
                 span.set_attribute(GEN_AI_INSTRUCTIONS, _trunc(instructions))
             return original(*args, **kwargs)
+
     return run_sync
 
 def apply_pydantic_ai_patch() -> bool:
